@@ -1,35 +1,28 @@
-name: Deploy to Google Cloud VM
+name: CI — Build check
 
 on:
-  workflow_dispatch:  # Solo manual — deploy a VM deshabilitado temporalmente
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  push:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          node-version: '20'
+          cache: 'npm'
 
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v2'
+      - name: Install dependencies
+        run: npm ci
 
-      - name: 'Deploy to VM'
-        run: |
-          gcloud compute ssh ia_tamaprint@orderloader --zone us-central1-a --command "
-            cd ~/orderLoader && \
-            git pull origin main && \
-            npm install && \
-            npm run build && \
-            echo '♻️ Reiniciando servidor...' && \
-            (lsof -ti:3000 | xargs kill -9 2>/dev/null || true) && \
-            nohup npm run start > ~/orderLoader/server.log 2>&1 &
-          "
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
