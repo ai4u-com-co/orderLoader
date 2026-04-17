@@ -26,9 +26,9 @@ export interface StepResult {
   detalles: string[];
 }
 
-const SOURCE_FOLDER = "A A EN PROCESO IA";
-const DEST_OK       = "A A INGRESADO";
-const DEST_REVISAR  = "A A REVISAR IA";
+const SOURCE_FOLDER = "INBOX.A A INGRESADO";
+const DEST_OK       = "INBOX.A A INGRESADO";
+const DEST_REVISAR  = "INBOX.A A REVISAR IA";
 
 function isLimpio(row: Record<string, unknown>): boolean {
   if (row.error_msg) return false;

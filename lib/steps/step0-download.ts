@@ -69,7 +69,7 @@ export async function run(): Promise<StepResult> {
 
   try {
     await client.connect();
-    const lock = await client.getMailboxLock("A A INGRESAR IA");
+    const lock = await client.getMailboxLock("INBOX.A A INGRESAR IA");
     const createdFolders = new Set<string>();
 
     try {
@@ -153,7 +153,7 @@ export async function run(): Promise<StepResult> {
             fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
           }
 
-          const STAGING_FOLDER = "A A EN PROCESO IA";
+          const STAGING_FOLDER = "INBOX.A A INGRESADO";
 
           // Write metadata — incluye UID y carpeta staging para que step7 pueda archivar
           const metadata = {
