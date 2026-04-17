@@ -103,3 +103,195 @@ DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloa
 ✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
 ✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (7ms)
 Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T15:17:14.197Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T15:17:14.328Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (53ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (44ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T15:17:15.826Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T15:17:15.855Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (7ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (7ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T16:00:03.627Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T16:00:03.685Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (20ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (10ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T17:00:03.521Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T17:00:03.713Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (99ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (53ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T18:00:03.211Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T18:00:03.239Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (9ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (7ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T19:00:03.712Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T19:00:03.905Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (64ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (57ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T20:00:07.314Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T20:00:07.611Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (4ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (107ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (101ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-16T21:00:03.884Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-16T21:00:04.111Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (3ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (113ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (61ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T02:00:04.208Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T02:00:04.346Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (63ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (3ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (39ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T03:00:02.464Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T03:00:02.533Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (30ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (18ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T04:00:03.027Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T04:00:03.110Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (35ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (29ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T14:00:04.509Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T14:00:04.675Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (59ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (40ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T15:00:03.650Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T15:00:03.804Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (63ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (2ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (51ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T16:00:02.338Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T16:00:02.369Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (10ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (7ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T17:00:02.901Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T17:00:02.928Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (8ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (6ms)
+Summary: Total Processed: 0, Total Errors: 0
+[2026-04-17T18:00:02.457Z] Starting scheduled pipeline run...
+DB migrada correctamente: /home/ai_tamaprint/Software/orderloader/.data/orderloader.db
+[2026-04-17T18:00:02.484Z] Pipeline finished.
+✅ Step 0 (download): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 1 (parse): 0 processed, 0 errors, 109 skipped (9ms)
+✅ Step 2 (validate-parse): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 3 (sap-query): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 4 (upload): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 5 (reconcile): 0 processed, 0 errors, 0 skipped (0ms)
+✅ Step 6 (notify): 0 processed, 0 errors, 0 skipped (1ms)
+✅ Step 7 (archive): 0 processed, 0 errors, 27 skipped (6ms)
+Summary: Total Processed: 0, Total Errors: 0

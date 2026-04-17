@@ -160,7 +160,7 @@ export async function run(): Promise<StepResult> {
         // Precio (SAP puede usar "Price" o "UnitPrice") — tolerancia 0%
         const pdfPrice = pdfLine.UnitPrice ?? 0;
         const sapPrice = Number(sapLine.Price ?? sapLine.UnitPrice ?? 0);
-        if (pdfPrice > 0 && sapPrice > 0) {
+        if (pdfPrice > 0) {
           // Comparar en centavos para evitar ruido de punto flotante
           if (Math.round(pdfPrice * 100) !== Math.round(sapPrice * 100)) {
             diferencias.push({
