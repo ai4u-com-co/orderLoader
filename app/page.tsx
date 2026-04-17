@@ -35,6 +35,17 @@ export default function Home() {
     fetchPedidos();
   }, [fetchPedidos]);
 
+  const handleDelete = useCallback(async (ordenes: string[]) => {
+    const res = await fetch("/api/pedidos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ordenes_compra: ordenes }),
+    });
+    const data = await res.json();
+    if (data.ok) fetchPedidos();
+    else alert(`Error al eliminar: ${data.error}`);
+  }, [fetchPedidos]);
+
   // Auto-refresh each 15s if there are pending orders
   useEffect(() => {
     const hasPending = pedidos.some(p =>
@@ -136,6 +147,7 @@ export default function Home() {
               filtroEstado={filtroEstado}
               onFiltroChange={setFiltroEstado}
               onSelect={setSelectedPedido}
+              onDelete={handleDelete}
             />
           )}
         </div>

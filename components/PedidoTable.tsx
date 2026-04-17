@@ -23,6 +23,7 @@ interface Props {
   filtroEstado: string;
   onFiltroChange: (estado: string) => void;
   onSelect: (pedido: Pedido) => void;
+  onDelete: (ordenes: string[]) => void;
 }
 
 function formatCOP(value: number): string {
@@ -53,11 +54,45 @@ function ErrorCell({ msg }: { msg: string | null }) {
   );
 }
 
-export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onSelect }: Props) {
+export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onSelect, onDelete }: Props) {
   const [busqueda, setBusqueda] = useState("");
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
 
   const filtered = (filtroEstado === "todos" ? pedidos : pedidos.filter(p => p.estado === filtroEstado))
     .filter(p => !busqueda || p.cliente_nombre.toLowerCase().includes(busqueda.toLowerCase()));
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(p => seleccionados.has(p.orden_compra));
+
+  function toggleAll() {
+    if (allFilteredSelected) {
+      setSeleccionados(prev => {
+        const next = new Set(prev);
+        filtered.forEach(p => next.delete(p.orden_compra));
+        return next;
+      });
+    } else {
+      setSeleccionados(prev => {
+        const next = new Set(prev);
+        filtered.forEach(p => next.add(p.orden_compra));
+        return next;
+      });
+    }
+  }
+
+  function toggleOne(oc: string) {
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      next.has(oc) ? next.delete(oc) : next.add(oc);
+      return next;
+    });
+  }
+
+  function handleDelete() {
+    const lista = [...seleccionados];
+    if (!confirm(`¿Eliminar ${lista.length} pedido(s) de la base de datos? Esta acción no se puede deshacer.`)) return;
+    onDelete(lista);
+    setSeleccionados(new Set());
+  }
 
   // Derive available states from data
   const stateCounts = pedidos.reduce((acc, p) => {
@@ -76,24 +111,37 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
 
   return (
     <div>
-      {/* Búsqueda */}
-      <div style={{ marginBottom: 12 }}>
-        <input
-          type="text"
-          placeholder="Buscar por cliente…"
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          style={{
-            padding: "7px 12px", fontSize: 13, border: "1px solid #dee2e6",
-            borderRadius: 6, width: 240, outline: "none", color: "#000",
-          }}
-        />
-        {busqueda && (
+      {/* Búsqueda + Eliminar */}
+      <div style={{ marginBottom: 12, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div>
+          <input
+            type="text"
+            placeholder="Buscar por cliente…"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            style={{
+              padding: "7px 12px", fontSize: 13, border: "1px solid #dee2e6",
+              borderRadius: 6, width: 240, outline: "none", color: "#000",
+            }}
+          />
+          {busqueda && (
+            <button
+              onClick={() => setBusqueda("")}
+              style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#000" }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {seleccionados.size > 0 && (
           <button
-            onClick={() => setBusqueda("")}
-            style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#000" }}
+            onClick={handleDelete}
+            style={{
+              background: "#dc2626", color: "#fff", border: "none",
+              borderRadius: 6, padding: "7px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600,
+            }}
           >
-            ✕
+            Eliminar {seleccionados.size} seleccionado(s)
           </button>
         )}
       </div>
@@ -180,6 +228,9 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13, color: "#000" }}>
             <thead>
               <tr style={{ background: "#f8fafc", color: "#000", borderBottom: "2px solid #e2e8f0" }}>
+                <th style={{ padding: "12px 16px", textAlign: "center", width: 40 }}>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} />
+                </th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 700 }}>OC</th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 700 }}>Cliente</th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 700 }}>Solicitado</th>
@@ -197,12 +248,15 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
                   onClick={() => onSelect(p)}
                   style={{
                     borderBottom: "1px solid #f1f5f9",
-                    background: p.estado.startsWith("ERROR") ? "#fff1f2" : undefined,
+                    background: seleccionados.has(p.orden_compra) ? "#eff6ff" : p.estado.startsWith("ERROR") ? "#fff1f2" : undefined,
                     cursor: "pointer",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = p.estado.startsWith("ERROR") ? "#ffe4e6" : "#f8fafc"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = p.estado.startsWith("ERROR") ? "#fff1f2" : "transparent"}
+                  onMouseEnter={(e) => e.currentTarget.style.background = seleccionados.has(p.orden_compra) ? "#dbeafe" : p.estado.startsWith("ERROR") ? "#ffe4e6" : "#f8fafc"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = seleccionados.has(p.orden_compra) ? "#eff6ff" : p.estado.startsWith("ERROR") ? "#fff1f2" : "transparent"}
                 >
+                  <td style={{ padding: "10px 16px", textAlign: "center" }} onClick={e => { e.stopPropagation(); toggleOne(p.orden_compra); }}>
+                    <input type="checkbox" checked={seleccionados.has(p.orden_compra)} onChange={() => toggleOne(p.orden_compra)} />
+                  </td>
                   <td style={{ padding: "10px 16px", fontWeight: 600 }}>{p.orden_compra}</td>
                   <td style={{ padding: "10px 16px" }}>{p.cliente_nombre}</td>
                   <td style={{ padding: "10px 16px" }}>{formatDate(p.fecha_solicitado)}</td>
