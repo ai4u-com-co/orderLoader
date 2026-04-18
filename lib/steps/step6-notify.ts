@@ -188,7 +188,7 @@ function buildPreciosHtml(db: any, rows: Array<Record<string, unknown>>): string
         <td style="padding:5px 10px;font-family:monospace;font-size:11px">${l.codigo_producto}</td>
         <td style="padding:5px 10px;text-align:right">${l.cantidad}</td>
         <td style="padding:5px 10px;text-align:right">${fmtCOP(l.precio_unitario)}</td>
-        <td style="padding:5px 10px;text-align:right">${tieneMalo ? fmtCOP(sapPrice) : "—"}</td>
+        <td style="padding:5px 10px;text-align:right">${fmtCOP(sapPrice)}</td>
         <td style="padding:5px 10px;text-align:right">${fmtCOP(l.subtotal_item)}</td>
         <td style="padding:5px 10px;text-align:center;color:${colorIcono};font-weight:bold">${icono}</td>
       </tr>`;
