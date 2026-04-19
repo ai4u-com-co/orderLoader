@@ -2,6 +2,9 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { getConfig } from "./config";
+import { getLogger } from "./logger";
+
+const log = getLogger("db");
 
 export interface PedidoMaestro {
   id: number;
@@ -126,7 +129,7 @@ export function migrate(): void {
   try { db.exec(`ALTER TABLE pipeline_log ADD COLUMN output_tokens INTEGER`); } catch { /* ya existe */ }
 
   db.close();
-  console.log("DB migrada correctamente:", config.dbPath);
+  log.info({ path: config.dbPath }, "DB migrada correctamente");
 }
 
 export function logPipeline(

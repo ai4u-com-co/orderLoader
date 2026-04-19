@@ -38,15 +38,15 @@ RUN apk add --no-cache libc6-compat
 # Copiar carpeta public (Next.js requiere esto)
 COPY --from=builder /app/public ./public
 
-# Crear directorio .next
-RUN mkdir -p .next .data
+# Crear directorios y transferir ownership al usuario node (UID 1000)
+RUN mkdir -p .next .data && chown -R node:node /app
 
 # Las apps 'standalone' agrupan los node_modules necesarios.
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+
+USER node
 
 EXPOSE 3000
 
-# Correr como root para poder escribir en el volumen .data montado desde el host
-# server.js es generado por standalone
 CMD ["node", "server.js"]

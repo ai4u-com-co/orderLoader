@@ -26,9 +26,6 @@ export interface Config {
   sapUser: string;
   sapPass: string;
   sapCompany: string;
-  sapPriceList: number;
-  sapPriceTolerance: number;
-
   // NIT → CardCode mapping
   nitToCardCode: Record<string, string>;
 
@@ -36,10 +33,31 @@ export interface Config {
   clientKeywords: Record<string, string[]>;
 }
 
+const REQUIRED_ENV: [string, string][] = [
+  ["CRON_SECRET",       "autenticación HTTP Basic Auth"],
+  ["EMAIL_USER",        "acceso IMAP/SMTP"],
+  ["EMAIL_PASS",        "acceso IMAP/SMTP"],
+  ["EMAIL_HOST",        "servidor IMAP"],
+  ["NOTIFY_EMAIL",      "envío de notificaciones"],
+  ["SAP_B1_URL",        "conexión SAP Business One"],
+  ["SAP_B1_USER",       "conexión SAP Business One"],
+  ["SAP_B1_PASS",       "conexión SAP Business One"],
+  ["SAP_B1_COMPANY",    "conexión SAP Business One"],
+  ["ANTHROPIC_API_KEY", "extracción AI de PDFs"],
+];
+
+function validateEnv(): void {
+  const missing = REQUIRED_ENV.filter(([key]) => !process.env[key]);
+  if (missing.length === 0) return;
+  const lines = missing.map(([key, desc]) => `  - ${key}  (${desc})`).join("\n");
+  throw new Error(`OrderLoader: variables de entorno requeridas no configuradas:\n${lines}`);
+}
+
 let _config: Config | null = null;
 
 export function getConfig(): Config {
   if (_config) return _config;
+  validateEnv();
 
   // Workspace root = parent of this file's directory (orderloader/..)
   // In Next.js, process.cwd() is the project root
@@ -81,9 +99,6 @@ export function getConfig(): Config {
     sapUser: process.env.SAP_B1_USER ?? "",
     sapPass: process.env.SAP_B1_PASS ?? "",
     sapCompany: process.env.SAP_B1_COMPANY ?? "",
-    sapPriceList: parseInt(process.env.SAP_B1_PRICE_LIST ?? "1"),
-    sapPriceTolerance: parseFloat(process.env.SAP_B1_PRICE_TOLERANCE ?? "2.0"),
-
     nitToCardCode: {
       "890924167": "CN890924167",
       "800069933": "CN800069933",

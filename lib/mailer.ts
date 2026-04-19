@@ -12,7 +12,8 @@ export async function sendAlertEmail(subject: string, html: string): Promise<voi
   const t = nodemailer.createTransport({
     host: config.smtpHost,
     port: config.smtpPort,
-    secure: false,
+    secure: config.smtpPort === 465,
+    requireTLS: config.smtpPort !== 465,
     auth: { user: config.emailUser, pass: config.emailPass },
   });
   await t.sendMail({ from: config.emailUser, to: config.notifyAlertasEmail, subject, html });

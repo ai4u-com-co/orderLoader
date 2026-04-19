@@ -22,7 +22,7 @@ export interface StepResult {
 
 // ── Validaciones ────────────────────────────────────────────────────────────
 
-function validarSapB1Json(order: SapB1Order, clienteNombre: string): string[] {
+export function validarSapB1Json(order: SapB1Order, clienteNombre: string): string[] {
   const errores: string[] = [];
 
   // Campos fijos
@@ -42,8 +42,14 @@ function validarSapB1Json(order: SapB1Order, clienteNombre: string): string[] {
     if (!/^\d{8}$/.test(valor ?? "")) {
       errores.push(`${campo} inválido: '${valor}' (formato esperado YYYYMMDD)`);
     } else {
-      const d = new Date(`${valor.slice(0, 4)}-${valor.slice(4, 6)}-${valor.slice(6)}`);
-      if (isNaN(d.getTime())) errores.push(`${campo} '${valor}' no es una fecha real`);
+      // Usar constructor numérico y comparar componentes para detectar overflow
+      // (ej. "20240230" → new Date("2024-02-30") devuelve March 1 sin error)
+      const y = parseInt(valor.slice(0, 4));
+      const m = parseInt(valor.slice(4, 6)) - 1;
+      const d = parseInt(valor.slice(6, 8));
+      const fecha = new Date(y, m, d);
+      if (fecha.getFullYear() !== y || fecha.getMonth() !== m || fecha.getDate() !== d)
+        errores.push(`${campo} '${valor}' no es una fecha real`);
     }
   }
 

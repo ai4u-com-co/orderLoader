@@ -1,6 +1,8 @@
 import { getDb } from "../lib/db";
 
+// Claude Sonnet 4.6 (claude-sonnet-4-6): $3/MTok input · $15/MTok output
 const PRICING = {
+  model: "claude-sonnet-4-6",
   inputPer1M: 3.0,
   outputPer1M: 15.0,
   trm: 4000
@@ -27,7 +29,7 @@ async function calculate() {
   const totalUsd = costInputUsd + costOutputUsd;
   const totalCop = totalUsd * PRICING.trm;
 
-  console.log("=== Reporte de Costos de IA (Anthropic) ===");
+  console.log(`=== Reporte de Costos de IA — ${PRICING.model} ===`);
   console.log(`Pedidos procesados: ${rows.total_orders}`);
   console.log(`Input Tokens:     ${rows.total_input.toLocaleString()}`);
   console.log(`Output Tokens:    ${rows.total_output.toLocaleString()}`);

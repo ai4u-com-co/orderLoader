@@ -1,4 +1,7 @@
 import { backupDb, migrate } from "./db";
+import { getLogger } from "./logger";
+
+const log = getLogger("pipeline");
 import { run as step0 } from "./steps/step0-download";
 import { run as step1 } from "./steps/step1-parse";
 import { run as step2 } from "./steps/step2-validate-parse";
@@ -91,10 +94,10 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
   _stopRequested = false;
 
   // Ensure DB schema exists (handles empty/new DB)
-  try { migrate(); } catch { /* ignore */ }
+  try { migrate(); } catch (e) { log.error({ err: e }, "migrate falló"); }
 
   // Backup DB before running
-  try { backupDb(); } catch { /* ignore */ }
+  try { backupDb(); } catch (e) { log.error({ err: e }, "backup falló"); }
 
   try {
     await logoutSapClient();

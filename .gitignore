@@ -42,3 +42,7 @@ next-env.d.ts
 
 # local data folder
 /.data
+
+# archivos generados en runtime
+server.log
+project.tar.gz

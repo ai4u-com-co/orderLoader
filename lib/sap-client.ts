@@ -1,4 +1,7 @@
 import { getConfig } from "./config";
+import { getLogger } from "./logger";
+
+const log = getLogger("sap-client");
 
 const SAP_TIMEOUT_MS = 30_000;
 
@@ -54,14 +57,14 @@ export class SapB1Client {
 
   async logout(): Promise<void> {
     try {
-      console.log("SAP: Logging out...");
+      log.info("SAP logout iniciado");
       await this._fetch(`${this.baseUrl}/Logout`, {
         method: "POST",
         headers: this._headers(),
       });
-      console.log("SAP: Logout successful.");
+      log.info("SAP logout exitoso");
     } catch (e) {
-      console.warn("SAP: Logout failed (ignoring):", String(e));
+      log.warn({ err: String(e) }, "SAP logout falló (ignorado)");
     }
     this.cookies = "";
   }
