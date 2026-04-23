@@ -7,7 +7,7 @@
 import fs from "fs";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
-import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK } from "../lib/prompts";
+import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK, PROMPT_PROINTIMO, PROMPT_TERMIMODA } from "../lib/prompts";
 
 const PROMPTS: Record<string, string> = {
   Comodin:          PROMPT_COMODIN,
@@ -22,6 +22,8 @@ const PROMPTS: Record<string, string> = {
   ServicioCompleto: PROMPT_SERVICIO_COMPLETO,
   ICVO:             PROMPT_ICVO,
   Produempak:       PROMPT_PRODUEMPAK,
+  Prointimo:        PROMPT_PROINTIMO,
+  Termimoda:        PROMPT_TERMIMODA,
 };
 
 async function main() {
@@ -49,7 +51,7 @@ async function main() {
   console.log(`\nParsando: ${path.basename(pdfPath)}`);
   console.log(`Cliente:  ${clienteArg}\n`);
 
-  const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+  const pdfParseFn = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
   const buffer = fs.readFileSync(pdfPath);
   const { text } = await pdfParseFn(buffer);
 

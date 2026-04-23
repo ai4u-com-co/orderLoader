@@ -145,7 +145,7 @@ export async function run(): Promise<StepResult> {
             fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
           }
 
-          const STAGING_FOLDER = "INBOX.A A INGRESADO";
+          const STAGING_FOLDER = "INBOX.A B INGRESADO";
 
           // Mover inmediatamente — esto evita el reloop. Capturar el nuevo UID via uidMap
           // (IMAP asigna un UID distinto en la carpeta destino; guardamos el nuevo para step7)

@@ -26,8 +26,8 @@ export interface StepResult {
   detalles: string[];
 }
 
-const SOURCE_FOLDER = "INBOX.A A INGRESADO";
-const DEST_OK       = "INBOX.A A INGRESADO";
+const SOURCE_FOLDER = "INBOX.A B INGRESADO";
+const DEST_OK       = "INBOX.A B INGRESADO";
 const DEST_REVISAR  = "INBOX.A A REVISAR IA";
 
 function isLimpio(row: Record<string, unknown>): boolean {

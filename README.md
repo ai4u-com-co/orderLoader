@@ -28,7 +28,7 @@ El sistema procesa pedidos automáticamente de lunes a domingo.
 ### 📂 Flujo de Carpetas (IMAP)
 El pipeline monitoriza y organiza los correos en la cuenta configurada:
 1. **Origen**: `A A INGRESAR IA` (Solo los correos en esta carpeta inician el pipeline).
-2. **Destino (Éxito)**: `A A INGRESADO` (Cuando el pedido se crea en SAP sin observaciones).
+2. **Destino (Éxito)**: `A B INGRESADO` (Cuando el pedido se crea en SAP sin observaciones).
 3. **Destino (Revisión)**: `A A REVISAR IA` (Cuando hay errores de IA, validación o SAP).
 
 ---

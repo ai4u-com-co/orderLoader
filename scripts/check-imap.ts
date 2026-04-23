@@ -34,8 +34,8 @@ async function main() {
     logger: false,
   });
   await imap.connect();
-  await listFolder(imap, "A A EN PROCESO IA");
-  await listFolder(imap, "A A INGRESADO");
+  await listFolder(imap, "A A INGRESAR IA");
+  await listFolder(imap, "A B INGRESADO");
   await listFolder(imap, "A A REVISAR IA");
   await imap.logout();
 }

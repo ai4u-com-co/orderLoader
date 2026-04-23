@@ -112,6 +112,8 @@ export function getConfig(): Config {
       "900690157": "CN900690157",
       "890932892": "CN890932892",
       "900445797": "CN900445797",
+      "811042428": "CN811042428",
+      "900447263": "CN900447263",
     },
 
     clientKeywords: {
@@ -127,6 +129,8 @@ export function getConfig(): Config {
       "ServicioCompleto": ["servicio completo", "900690157"],
       "ICVO":             ["icvo", "890932892", "icvo.com.co"],
       "Produempak":       ["produempak", "900445797"],
+      "Prointimo":        ["prointimo", "811042428"],
+      "Termimoda":        ["termimoda", "900447263"],
     },
   };
 

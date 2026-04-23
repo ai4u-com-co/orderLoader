@@ -13,7 +13,7 @@ import { getDb, logPipeline } from "../db";
 import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
-import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK } from "../prompts";
+import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK, PROMPT_PROINTIMO, PROMPT_TERMIMODA } from "../prompts";
 
 export interface StepResult {
   procesados: number;
@@ -160,6 +160,8 @@ const CLIENTES: Array<{ carpeta: string; nombre: string; prompt: string }> = [
   { carpeta: "ServicioCompleto", nombre: "SERVICIOCOMPLETO", prompt: PROMPT_SERVICIO_COMPLETO },
   { carpeta: "ICVO",             nombre: "ICVO",             prompt: PROMPT_ICVO             },
   { carpeta: "Produempak",       nombre: "PRODUEMPAK",       prompt: PROMPT_PRODUEMPAK       },
+  { carpeta: "Prointimo",        nombre: "PROINTIMO",        prompt: PROMPT_PROINTIMO        },
+  { carpeta: "Termimoda",        nombre: "TERMIMODA",        prompt: PROMPT_TERMIMODA        },
 ];
 
 // Todas las carpetas a escanear (incluye "Otros" para PDFs mal clasificados en step0)
@@ -182,6 +184,8 @@ const CLIENT_NITS: Array<{ carpeta: string; nits: string[] }> = [
   { carpeta: "ServicioCompleto", nits: ["900690157"] },
   { carpeta: "ICVO",             nits: ["890932892"] },
   { carpeta: "Produempak",       nits: ["900445797"] },
+  { carpeta: "Prointimo",        nits: ["811042428"] },
+  { carpeta: "Termimoda",        nits: ["900447263"] },
 ];
 
 // Keywords de texto como fallback (evitar falsos positivos — se usan solo si no hay NIT)
@@ -198,6 +202,8 @@ const CLIENT_TEXT_KEYWORDS: Array<{ carpeta: string; keywords: string[] }> = [
   { carpeta: "ServicioCompleto", keywords: ["servicio completo", "serviciocompleto", "900690157"] },
   { carpeta: "ICVO",             keywords: ["icvo", "icvo.com.co", "890932892"] },
   { carpeta: "Produempak",       keywords: ["produempak", "900445797"] },
+  { carpeta: "Prointimo",        keywords: ["prointimo", "811042428"] },
+  { carpeta: "Termimoda",        keywords: ["termimoda", "900447263"] },
 ];
 
 function detectClientFromPdf(pdfText: string): string | null {

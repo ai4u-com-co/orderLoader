@@ -33,14 +33,22 @@ function maxFechaLineas(lines: { DeliveryDate?: string }[], fallback: string): s
 }
 
 /** Intenta identificar qué SupplierCatNum causó el error SAP.
- *  SAP B1 suele incluir el código del artículo o un índice de fila en el mensaje. */
+ *  SAP B1 suele incluir el código del artículo (ItemCode o SupplierCatNum) o un índice de fila. */
 function extractItemFromError(
   errorMsg: string,
-  lines: Array<{ SupplierCatNum: string }>
+  lines: Array<{ SupplierCatNum: string }>,
+  mapping: Map<string, string>
 ): string | null {
   for (const line of lines) {
+    // 1. Buscar por el código del cliente (SupplierCatNum)
     if (errorMsg.includes(line.SupplierCatNum)) return line.SupplierCatNum;
+
+    // 2. Buscar por el código interno de SAP (ItemCode) usando el mapa
+    const sapCode = mapping.get(line.SupplierCatNum);
+    if (sapCode && errorMsg.includes(sapCode)) return line.SupplierCatNum;
   }
+
+  // 3. Fallback: buscar por índice de fila [Row X]
   const rowMatch = errorMsg.match(/[Rr]ow\s*\[?(\d+)\]?/);
   if (rowMatch) {
     const idx = parseInt(rowMatch[1]);
@@ -49,36 +57,33 @@ function extractItemFromError(
   return null;
 }
 
-/** Consulta AlternateCatNum (tabla OSCN en SAP B1) para determinar qué
- *  SupplierCatNums están registrados para el CardCode dado.
- *  Usa el campo `Substitute` que es el número de catálogo alternativo del cliente.
- *
- *  Safe default: si la consulta falla asumimos que el artículo SÍ existe
- *  para evitar excluir artículos válidos por error de red o de permisos. */
-async function fetchExistingCatNums(
+/** Consulta AlternateCatNum para determinar qué SupplierCatNums existen
+ *  y mapearlos a sus ItemCodes de SAP. */
+async function fetchCatNumMappings(
   sap: SapB1Client,
   cardCode: string,
   catNums: string[]
-): Promise<Set<string>> {
-  const found = new Set<string>();
+): Promise<Map<string, string>> {
+  const mapping = new Map<string, string>();
   await Promise.all(
     catNums.map(async (catNum) => {
       try {
         const escapedCard = cardCode.replace(/'/g, "''");
         const escapedCat  = catNum.replace(/'/g, "''");
-        const res = await sap.get<{ value: unknown[] }>("AlternateCatNum", {
+        const res = await sap.get<{ value: Array<{ ItemCode: string }> }>("AlternateCatNum", {
           "$filter": `CardCode eq '${escapedCard}' and Substitute eq '${escapedCat}'`,
           "$select": "ItemCode",
           "$top": "1",
         });
-        if (res.value?.length > 0) found.add(catNum);
+        if (res.value?.length > 0) {
+          mapping.set(catNum, res.value[0].ItemCode);
+        }
       } catch {
-        // Si la consulta falla, asumimos que el artículo existe (evita falsos positivos)
-        found.add(catNum);
+        // Silencioso: si falla la consulta no agregamos al mapa
       }
     })
   );
-  return found;
+  return mapping;
 }
 
 export async function run(): Promise<StepResult> {
@@ -151,11 +156,12 @@ export async function run(): Promise<StepResult> {
     const excluidos: typeof lineas = [];
 
     const allCatNums = [...new Set(lineas.map(l => l.SupplierCatNum))];
-    const existing = await fetchExistingCatNums(sap, aiData.CardCode, allCatNums);
-    const missing = lineas.filter(l => !existing.has(l.SupplierCatNum));
+    const itemMappings = await fetchCatNumMappings(sap, aiData.CardCode, allCatNums);
+    
+    const missing = lineas.filter(l => !itemMappings.has(l.SupplierCatNum));
     if (missing.length > 0) {
       excluidos.push(...missing);
-      lineas = lineas.filter(l => existing.has(l.SupplierCatNum));
+      lineas = lineas.filter(l => itemMappings.has(l.SupplierCatNum));
       for (const m of missing) {
         logPipeline(db, oc, 4, "upload", "WARN",
           `Artículo ${m.SupplierCatNum} no existe en AlternateCatNum de SAP — excluido`);
@@ -205,7 +211,7 @@ export async function run(): Promise<StepResult> {
         break;
       } catch (e) {
         const errorMsg = String(e);
-        const itemCode = extractItemFromError(errorMsg, lineas);
+        const itemCode = extractItemFromError(errorMsg, lineas, itemMappings);
         if (!itemCode) {
           db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_SAP', error_msg=? WHERE orden_compra=?`)
             .run(errorMsg.slice(0, 1000), oc);
