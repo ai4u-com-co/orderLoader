@@ -29,6 +29,7 @@ export interface StepResult {
 const SOURCE_FOLDER = "INBOX.A B INGRESADO";
 const DEST_OK       = "INBOX.A B INGRESADO";
 const DEST_REVISAR  = "INBOX.A A REVISAR IA";
+const DEST_SANDRA   = "INBOX.A A SANDRA";
 
 function isLimpio(row: Record<string, unknown>): boolean {
   if (row.error_msg) return false;
@@ -84,6 +85,11 @@ function collectStagingUids(pedidosRawDir: string): Map<string, { uid: number; s
               if (oc) ocs.add(oc);
             } catch { /* skip */ }
           }
+          // Vía 3: archivo .retries → OC en el nombre del archivo (ej: 4500288469.PDF.retries)
+          else if (entry.endsWith(".retries")) {
+            const stem = entry.replace(/\.retries$/i, "").replace(/\.[^.]+$/, "");
+            if (stem) ocs.add(stem);
+          }
         }
 
         for (const oc of ocs) {
@@ -124,6 +130,7 @@ async function moveInImap(
       try {
         try { await imap.mailboxCreate(DEST_OK); } catch { /* ya existe */ }
         try { await imap.mailboxCreate(DEST_REVISAR); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(DEST_SANDRA); } catch { /* ya existe */ }
 
         // Agrupar por destino; deduplicar UIDs
         const byDest = new Map<string, Set<number>>();
@@ -168,7 +175,10 @@ export async function run(): Promise<StepResult> {
       if (!meta.imap_uid) continue;
       const uid  = Number(meta.imap_uid);
       const src  = meta.imap_staging_folder ?? SOURCE_FOLDER;
-      const dest = isLimpio(row) ? DEST_OK : DEST_REVISAR;
+      // Si el correo tenía archivos no aprobados → va a Sandra independientemente del resultado
+      const dest = meta.has_extra_files === true
+        ? DEST_SANDRA
+        : (isLimpio(row) ? DEST_OK : DEST_REVISAR);
       moveJobs.push({ uid, source: src, dest });
       destByOrden[String(row.orden_compra)] = dest;
     } catch { /* metadata no disponible */ }

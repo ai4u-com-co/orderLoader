@@ -14,6 +14,7 @@ import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
 import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK, PROMPT_PROINTIMO, PROMPT_TERMIMODA } from "../prompts";
+import { detectClientFromPdf, esDirigidoATamaprint } from "../pdf-classify";
 
 export interface StepResult {
   procesados: number;
@@ -104,20 +105,7 @@ function insertSapOrder(
   }
 }
 
-// ── Identificación Tamaprint ──────────────────────────────────────────────────
-// Cualquier variante del NIT o nombre que aparezca en un PDF dirigido a nosotros.
-const TAMAPRINT_KEYWORDS = [
-  "tamaprint",
-  "tama print",
-  "900851655",   // NIT sin dígito de verificación
-  "9008516551",  // NIT con dígito de verificación
-  "900.851.655", // NIT con puntos
-];
-
-function esDirigidoATamaprint(pdfText: string): boolean {
-  const lower = pdfText.toLowerCase();
-  return TAMAPRINT_KEYWORDS.some(kw => lower.includes(kw));
-}
+// esDirigidoATamaprint y detectClientFromPdf importados desde lib/pdf-classify.ts
 
 async function notificarPDFNoTamaprint(
   cliente: string,
@@ -168,60 +156,7 @@ const CLIENTES: Array<{ carpeta: string; nombre: string; prompt: string }> = [
 // Todas las carpetas a escanear (incluye "Otros" para PDFs mal clasificados en step0)
 const CARPETAS_A_ESCANEAR = [...CLIENTES.map(c => c.carpeta), "Otros"];
 
-// ── Detección de cliente desde el PDF (fuente de verdad) ─────────────────────
-// Los NITs son la señal más confiable: aparecen en toda OC como identificador del comprador.
-// Se normalizan quitando puntos para matchear "800.069.933" y "800069933" por igual.
-
-const CLIENT_NITS: Array<{ carpeta: string; nits: string[] }> = [
-  { carpeta: "Comodin",     nits: ["800069933"] },
-  { carpeta: "Hermeco",     nits: ["890924167"] },
-  { carpeta: "Exito",       nits: ["890900608"] },
-  { carpeta: "Eurocorsett",    nits: ["811032857"] },
-  { carpeta: "IndustriasCory", nits: ["800131750"] },
-  { carpeta: "EstudioModa",    nits: ["890926803"] },
-  { carpeta: "PinturasPrime",  nits: ["800194203"] },
-  { carpeta: "Manutex",        nits: ["900426666"] },
-  { carpeta: "ElGlobo",          nits: ["800227956"] },
-  { carpeta: "ServicioCompleto", nits: ["900690157"] },
-  { carpeta: "ICVO",             nits: ["890932892"] },
-  { carpeta: "Produempak",       nits: ["900445797"] },
-  { carpeta: "Prointimo",        nits: ["811042428"] },
-  { carpeta: "Termimoda",        nits: ["900447263"] },
-];
-
-// Keywords de texto como fallback (evitar falsos positivos — se usan solo si no hay NIT)
-const CLIENT_TEXT_KEYWORDS: Array<{ carpeta: string; keywords: string[] }> = [
-  { carpeta: "Comodin",     keywords: ["gco", "comodin", "americanino", "gco.com.co"] },
-  { carpeta: "Hermeco",     keywords: ["hermeco", "offcorss", "offcorss.com"] },
-  { carpeta: "Exito",       keywords: ["grupoexito", "grupo-exito", "grupo exito", "grupo éxito"] },
-  { carpeta: "Eurocorsett",    keywords: ["eurocorsett", "eurocorsett.com"] },
-  { carpeta: "IndustriasCory", keywords: ["industrias cory", "industriascory", "cory s.a.s"] },
-  { carpeta: "EstudioModa",    keywords: ["estudio de moda", "estudiomoda", "890926803"] },
-  { carpeta: "PinturasPrime",  keywords: ["pinturas prime", "pinturasprime", "800194203", "pinturasprime.com"] },
-  { carpeta: "Manutex",        keywords: ["manutex", "comercializadora manutex", "900426666"] },
-  { carpeta: "ElGlobo",          keywords: ["el globo", "elglobo", "c.i. el globo", "800227956"] },
-  { carpeta: "ServicioCompleto", keywords: ["servicio completo", "serviciocompleto", "900690157"] },
-  { carpeta: "ICVO",             keywords: ["icvo", "icvo.com.co", "890932892"] },
-  { carpeta: "Produempak",       keywords: ["produempak", "900445797"] },
-  { carpeta: "Prointimo",        keywords: ["prointimo", "811042428"] },
-  { carpeta: "Termimoda",        keywords: ["termimoda", "900447263"] },
-];
-
-function detectClientFromPdf(pdfText: string): string | null {
-  // Paso 1: buscar NIT (se quitan puntos para normalizar formato colombiano)
-  const normalized = pdfText.replace(/\./g, "");
-  for (const { carpeta, nits } of CLIENT_NITS) {
-    if (nits.some(nit => normalized.includes(nit))) return carpeta;
-  }
-
-  // Paso 2: keywords de marca como fallback
-  const lower = pdfText.toLowerCase();
-  for (const { carpeta, keywords } of CLIENT_TEXT_KEYWORDS) {
-    if (keywords.some(kw => lower.includes(kw))) return carpeta;
-  }
-
-  return null;
-}
+// CLIENT_NITS, CLIENT_TEXT_KEYWORDS, detectClientFromPdf importados desde lib/pdf-classify.ts
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -235,11 +170,14 @@ export async function run(): Promise<StepResult> {
   }
 
   const db = getDb();
-  const ESTADOS_AVANZADOS = new Set([
-    "PARSE_VALIDO", "SAP_NUEVO", "SAP_MONTADO",
-    "VALIDADO", "ERROR_VALIDACION",
-    "NOTIFICADO", "CERRADO",
-    "ERROR_DUPLICADO", "ERROR_ITEMS", "ERROR_SAP",
+  // Solo bloqueamos si la OC está siendo procesada en este momento por otra instancia.
+  // Estados terminales (CERRADO, ERROR_*, NOTIFICADO) se permiten re-procesar:
+  // SAP es la única fuente de verdad para detectar duplicados reales (step3).
+  const ESTADOS_EN_PROCESO = new Set([
+    "PARSED",
+    "PARSE_VALIDO",
+    "SAP_NUEVO",
+    "SAP_MONTADO",
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -353,9 +291,9 @@ export async function run(): Promise<StepResult> {
             "SELECT estado FROM pedidos_maestro WHERE orden_compra = ?"
           ).get(order.NumAtCard) as { estado: string } | undefined;
 
-          if (existente && ESTADOS_AVANZADOS.has(existente.estado)) {
+          if (existente && ESTADOS_EN_PROCESO.has(existente.estado)) {
             result.saltados++;
-            result.detalles.push(`  [skip] OC ${order.NumAtCard} ya en ${existente.estado}`);
+            result.detalles.push(`  [skip] OC ${order.NumAtCard} en proceso activo (${existente.estado})`);
             fs.writeFileSync(doneMarker, order.NumAtCard);
             continue;
           }

@@ -26,10 +26,13 @@ El sistema procesa pedidos automáticamente de lunes a domingo.
 - **Mecanismo**: Cron job ejecutando `scripts/cron-pipeline.ts` vía `tsx`.
 
 ### 📂 Flujo de Carpetas (IMAP)
-El pipeline monitoriza y organiza los correos en la cuenta configurada:
-1. **Origen**: `A A INGRESAR IA` (Solo los correos en esta carpeta inician el pipeline).
-2. **Destino (Éxito)**: `A B INGRESADO` (Cuando el pedido se crea en SAP sin observaciones).
-3. **Destino (Revisión)**: `A A REVISAR IA` (Cuando hay errores de IA, validación o SAP).
+El pipeline monitoriza y organiza los correos directamente desde la bandeja de entrada:
+1. **Origen**: `INBOX` (Bandeja de entrada — todos los correos entrantes se clasifican automáticamente).
+2. **No reconocidos**: `A A SANDRA` (Remitentes desconocidos o correos que no son órdenes de compra).
+3. **Staging**: `A B INGRESADO` (Pedidos de clientes aprobados mientras avanzan por el pipeline).
+4. **Destino (Éxito)**: `A B INGRESADO` (Cuando el pedido se crea en SAP sin observaciones).
+5. **Destino (Revisión)**: `A A REVISAR IA` (Cuando hay errores de IA, validación o SAP).
+6. **Notificaciones propias**: Permanecen en `INBOX` (correos enviados por el propio OrderLoader).
 
 ---
 

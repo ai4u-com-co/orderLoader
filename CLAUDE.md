@@ -13,6 +13,12 @@
 - **Logic**: Sequential pipeline in `lib/steps`.
 - **Naming**: Spanish for business logic (pedidos, maestro, detalle), English for technical components.
 
+## Deploy
+Siempre que termines de hacer cambios, ejecuta el deploy en Docker:
+```bash
+docker compose up -d --build
+```
+
 ## Troubleshooting
 - **Pipeline Logs**: `docker logs orderloader -f`
 - **DB Backups**: Found in `.data/pedidos/backups/`.

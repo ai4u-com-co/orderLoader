@@ -8,6 +8,7 @@
  * VALIDADO | ERROR_* | SAP_MONTADO → NOTIFICADO
  */
 
+import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
 import { getConfig } from "../config";
@@ -67,12 +68,38 @@ export async function run(): Promise<StepResult> {
   for (const row of rows) {
     const oc = String(row.orden_compra);
     try {
+      // Detectar si el correo original tenía archivos extra no aprobados
+      let hasExtraFiles = false;
+      let archivosExtra = "";
+      try {
+        const carpeta = String(row.carpeta_origen ?? "");
+        if (carpeta) {
+          const meta = JSON.parse(fs.readFileSync(path.join(carpeta, "correo_metadata.json"), "utf8"));
+          hasExtraFiles = meta.has_extra_files === true;
+          archivosExtra = meta.archivos_extra ?? "";
+        }
+      } catch { /* ignorar si no hay metadata */ }
+
+      let html = buildHtmlForOrder(db, row, fecha);
+      if (hasExtraFiles) {
+        const nota = `
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0">
+  <tr>
+    <td style="background:#fff7ed;border:1px solid #ff6e00;border-radius:6px;padding:12px 16px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#c2410c">
+      <b>⚠ Este correo contiene más PDFs</b><br>
+      <span style="color:#78350f;font-size:12px">Archivos no procesados: ${archivosExtra || "ver correo original en A A SANDRA"}</span>
+    </td>
+  </tr>
+</table>`;
+        html = html.replace("</body>", `${nota}</body>`);
+      }
+
       await transporter.sendMail({
         from: config.emailUser,
         to: config.notifyEmail,
         cc: "pedidos@tamaprint.com",
         subject: buildSubjectForOrder(row),
-        html: buildHtmlForOrder(db, row, fecha),
+        html,
         attachments: [
           { filename: "logo.png", path: LOGO_PATH, cid: "logo" },
         ],

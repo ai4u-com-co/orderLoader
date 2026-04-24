@@ -1,12 +1,15 @@
 /**
  * Step 0: Descarga correos de pedidos desde IMAP y organiza archivos.
  *
- * Por cada correo no leído en INBOX:
- *   - Identifica el cliente (Hermeco / Comodin / Exito / Otros)
- *   - Guarda en pedidos/raw/CLIENTE/YYYYMMDD_HHMMSS_ASUNTO/:
- *       correo_original.txt, correo_original.eml, correo_metadata.json,
- *       estado_pipeline.json, adjuntos PDF
- *   - Mueve el correo en el servidor a Pedidos/Procesados/CLIENTE
+ * Protocolo de clasificación (fuente de verdad: contenido del PDF):
+ *   1. Asunto contiene "[OrderLoader]"  → notificación propia, se deja en INBOX
+ *   2. Ningún adjunto PDF               → A A SANDRA
+ *   3. Ningún PDF es OC de cliente aprobado dirigido a Tamaprint → A A SANDRA
+ *   4. Hay PDFs aprobados + otros archivos → procesa los aprobados, correo a A A SANDRA
+ *   5. Solo PDFs aprobados              → pipeline normal (A B INGRESADO → step7 decide final)
+ *
+ * El campo has_extra_files en correo_metadata.json indica a step7 si el correo
+ * debe ir a A A SANDRA al final, independientemente del resultado del pipeline.
  */
 
 import { ImapFlow } from "imapflow";
@@ -15,7 +18,7 @@ import fs from "fs";
 import path from "path";
 import { getConfig } from "../config";
 import { getDb, logPipeline, ensureWorkspaceDirs } from "../db";
-import type { Config } from "../config";
+import { detectClientFromPdf, esDirigidoATamaprint } from "../pdf-classify";
 
 export interface StepResult {
   procesados: number;
@@ -28,24 +31,52 @@ function clean(text: string): string {
   return text.replace(/[^a-zA-Z0-9\-_.]/g, "_");
 }
 
-function getClientFolder(sender: string, subject: string, body: string, config: Config): string {
-  // 1. Prioridad: buscar en asunto (más confiable, evita falsos positivos del cuerpo)
-  const subjectLower = `${sender} ${subject}`.toLowerCase();
-  for (const [cliente, keywords] of Object.entries(config.clientKeywords)) {
-    if (keywords.some(kw => subjectLower.includes(kw.toLowerCase()))) {
-      return cliente;
+interface AttachmentInfo {
+  filename: string;
+  content: Buffer;
+}
+
+interface PdfClassification {
+  filename: string;
+  content: Buffer;
+  client: string | null;   // carpeta del cliente aprobado, o null
+  isTamaprint: boolean;
+  isApprovedOC: boolean;   // client !== null AND isTamaprint
+}
+
+async function clasificarPdfs(pdfs: AttachmentInfo[]): Promise<PdfClassification[]> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+  const results: PdfClassification[] = [];
+  for (const pdf of pdfs) {
+    try {
+      const { text } = await pdfParseFn(pdf.content);
+      const client      = detectClientFromPdf(text);
+      const isTamaprint = esDirigidoATamaprint(text);
+      results.push({
+        filename: pdf.filename,
+        content:  pdf.content,
+        client,
+        isTamaprint,
+        isApprovedOC: client !== null && isTamaprint,
+      });
+    } catch {
+      // PDF corrupto o no legible: tratar como archivo no reconocido
+      results.push({ filename: pdf.filename, content: pdf.content, client: null, isTamaprint: false, isApprovedOC: false });
     }
   }
+  return results;
+}
 
-  // 2. Fallback: buscar en cuerpo completo del correo
-  const bodyLower = body.toLowerCase();
-  for (const [cliente, keywords] of Object.entries(config.clientKeywords)) {
-    if (keywords.some(kw => bodyLower.includes(kw.toLowerCase()))) {
-      return cliente;
-    }
+const STAGING_FOLDER = "INBOX.A B INGRESADO";
+const SANDRA_FOLDER  = "INBOX.A A SANDRA";
+
+async function moveToSandra(imapClient: ImapFlow, uid: number): Promise<void> {
+  try {
+    await imapClient.messageMove(String(uid), SANDRA_FOLDER, { uid: true });
+  } catch {
+    try { await imapClient.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
   }
-
-  return "Otros";
 }
 
 export async function run(): Promise<StepResult> {
@@ -59,7 +90,7 @@ export async function run(): Promise<StepResult> {
     return result;
   }
 
-  const client = new ImapFlow({
+  const imapClient = new ImapFlow({
     host: config.emailHost,
     port: config.emailPort,
     secure: true,
@@ -68,40 +99,87 @@ export async function run(): Promise<StepResult> {
   });
 
   try {
-    await client.connect();
-    const lock = await client.getMailboxLock("INBOX.A A INGRESAR IA");
+    await imapClient.connect();
+    await imapClient.mailboxCreate(SANDRA_FOLDER).catch(() => {});
+
+    const lock = await imapClient.getMailboxLock("INBOX");
     const createdFolders = new Set<string>();
 
     try {
       const messages = [];
-      for await (const msg of client.fetch("1:*", {
-        uid: true,
-        flags: true,
-        envelope: true,
-        source: true,
+      for await (const msg of imapClient.fetch("1:*", {
+        uid: true, flags: true, envelope: true, source: true,
       })) {
         messages.push(msg);
       }
 
       if (messages.length === 0) {
-        result.detalles.push("No hay correos en A A INGRESAR IA");
+        result.detalles.push("No hay correos en INBOX");
         return result;
       }
 
-      result.detalles.push(`Encontrados ${messages.length} correo(s) en A A INGRESAR IA — procesando 1`);
+      result.detalles.push(`Revisando INBOX: ${messages.length} correo(s)`);
 
-      // Flujo unitario: procesar solo el primer correo; el pipeline llama step0 en loop
-      for (const msg of messages.slice(0, 1)) {
+      for (const msg of messages) {
         try {
-          const envelope = msg.envelope;
-          const subject = envelope?.subject ?? "Sin asunto";
-          const sender = envelope?.from?.[0]?.address ?? "";
+          const envelope   = msg.envelope;
+          const subject    = envelope?.subject ?? "Sin asunto";
+          const sender     = envelope?.from?.[0]?.address ?? "";
           const dateHeader = envelope?.date?.toISOString() ?? new Date().toISOString();
 
-          // Usar el raw EML completo para clasificación (incluye headers de forwards y HTML codificado)
-          const rawEmail = msg.source ? msg.source.toString("utf8") : "";
+          // ── 1. Notificación propia de OrderLoader → dejar en INBOX ────────────
+          if (subject.includes("[OrderLoader]")) {
+            result.detalles.push(`INBOX (notif OrderLoader): "${subject}"`);
+            continue;
+          }
 
-          const client_folder = getClientFolder(sender, subject, rawEmail, config);
+          // ── 2. Parsear EML para obtener todos los adjuntos ─────────────────────
+          let parsedText = "";
+          const pdfAttachments: AttachmentInfo[]   = [];
+          const otherAttachments: AttachmentInfo[] = [];
+
+          if (msg.source) {
+            const parsed = await simpleParser(msg.source);
+            if (parsed.text) parsedText = parsed.text;
+
+            for (const att of parsed.attachments) {
+              if (!att.filename) continue;
+              const safeName = clean(att.filename) || "adjunto";
+              const info: AttachmentInfo = { filename: safeName, content: att.content as Buffer };
+              if (safeName.toLowerCase().endsWith(".pdf")) {
+                pdfAttachments.push(info);
+              } else {
+                otherAttachments.push(info);
+              }
+            }
+          }
+
+          // ── 3. Sin PDFs → Sandra ───────────────────────────────────────────────
+          if (pdfAttachments.length === 0) {
+            await moveToSandra(imapClient, msg.uid);
+            result.saltados++;
+            result.detalles.push(`SANDRA (sin PDF): "${subject}" de ${sender}`);
+            continue;
+          }
+
+          // ── 4. Clasificar cada PDF por su contenido interno ───────────────────
+          const clasificados = await clasificarPdfs(pdfAttachments);
+          const approvedPdfs = clasificados.filter(p => p.isApprovedOC);
+
+          if (approvedPdfs.length === 0) {
+            await moveToSandra(imapClient, msg.uid);
+            result.saltados++;
+            result.detalles.push(`SANDRA (ningún PDF es OC aprobada): "${subject}" de ${sender}`);
+            continue;
+          }
+
+          // ── 5. Hay PDFs aprobados: determinar si hay "extras" ─────────────────
+          // Extra = cualquier adjunto que no sea una OC de cliente aprobado
+          const hasExtraFiles = (approvedPdfs.length < pdfAttachments.length) || otherAttachments.length > 0;
+
+          // Carpeta de almacenamiento: primer cliente detectado (step1 re-detecta de todos modos)
+          const client_folder = approvedPdfs[0].client!;
+
           const ts = new Date()
             .toISOString()
             .replace(/[-:T]/g, (c) => (c === "T" ? "_" : c))
@@ -118,61 +196,52 @@ export async function run(): Promise<StepResult> {
           const pedidoPath = path.join(config.pedidosRawDir, client_folder, folderName);
           fs.mkdirSync(pedidoPath, { recursive: true });
 
-          // Save raw source as EML
+          // Guardar EML original
           if (msg.source) {
             fs.writeFileSync(path.join(pedidoPath, "correo_original.eml"), msg.source);
           }
 
-          // Parse EML with mailparser (handles nested forwards, Apple Mail, etc.)
-          let bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n`;
-          let pdfCount = 0;
+          // Guardar texto plano
+          const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
+          fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
 
-          if (msg.source) {
-            const parsed = await simpleParser(msg.source);
-
-            // Extract text body
-            if (parsed.text) bodyText += parsed.text;
-            fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
-
-            // Extract all attachments (including those inside forwarded message/rfc822)
-            for (const att of parsed.attachments) {
-              if (!att.filename) continue;
-              const safeName = clean(att.filename) || "adjunto";
-              fs.writeFileSync(path.join(pedidoPath, safeName), att.content);
-              if (safeName.toLowerCase().endsWith(".pdf")) pdfCount++;
-            }
-          } else {
-            fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
+          // Guardar todos los adjuntos — step1 ignora los no aprobados con su propio detectClientFromPdf
+          for (const att of [...pdfAttachments, ...otherAttachments]) {
+            fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
           }
 
-          const STAGING_FOLDER = "INBOX.A B INGRESADO";
-
-          // Mover inmediatamente — esto evita el reloop. Capturar el nuevo UID via uidMap
-          // (IMAP asigna un UID distinto en la carpeta destino; guardamos el nuevo para step7)
+          // Mover a staging — capturar nuevo UID para que step7 lo mueva al final
           let storedUid = msg.uid;
           try {
-            const moveResult = await client.messageMove(String(msg.uid), STAGING_FOLDER, { uid: true });
+            const moveResult = await imapClient.messageMove(String(msg.uid), STAGING_FOLDER, { uid: true });
             const newUid = (moveResult as { uidMap?: Map<number, number> })?.uidMap?.get(msg.uid);
             if (newUid) storedUid = newUid;
           } catch {
-            try { await client.messageFlagsAdd(String(msg.uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
+            try { await imapClient.messageFlagsAdd(String(msg.uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
           }
 
-          // Write metadata — usa el UID válido en staging para que step7 pueda moverlo
-          const metadata = {
-            from: sender,
-            subject,
-            date: dateHeader,
-            client: client_folder,
-            folder_local: `pedidos/raw/${client_folder}/${folderName}`,
-            imap_uid: storedUid,
-            imap_staging_folder: STAGING_FOLDER,
-            n_adjuntos_pdf: pdfCount,
-            ts_download: new Date().toISOString(),
-          };
+          const approvedNames = approvedPdfs.map(p => p.filename).join(", ");
+          const extraNames    = [
+            ...clasificados.filter(p => !p.isApprovedOC).map(p => p.filename),
+            ...otherAttachments.map(a => a.filename),
+          ].join(", ");
+
           fs.writeFileSync(
             path.join(pedidoPath, "correo_metadata.json"),
-            JSON.stringify(metadata, null, 2),
+            JSON.stringify({
+              from: sender,
+              subject,
+              date: dateHeader,
+              client: client_folder,
+              folder_local: `pedidos/raw/${client_folder}/${folderName}`,
+              imap_uid: storedUid,
+              imap_staging_folder: STAGING_FOLDER,
+              n_adjuntos_pdf: approvedPdfs.length,
+              has_extra_files: hasExtraFiles,
+              pdfs_aprobados: approvedNames,
+              ...(hasExtraFiles ? { archivos_extra: extraNames } : {}),
+              ts_download: new Date().toISOString(),
+            }, null, 2),
             "utf8"
           );
 
@@ -182,26 +251,33 @@ export async function run(): Promise<StepResult> {
             "utf8"
           );
 
-          // Log to DB
           try {
             const db = getDb();
             logPipeline(db, folderName, 0, "download", "OK",
-              `UID=${storedUid} cliente=${client_folder} PDFs=${pdfCount}`);
-          } catch {
-            /* DB might not exist yet */
-          }
+              `UID=${storedUid} cliente=${client_folder} PDFs_OC=${approvedPdfs.length} extras=${hasExtraFiles}`);
+          } catch { /* DB might not exist yet */ }
 
           result.procesados++;
-          result.detalles.push(`OK: pedidos/raw/${client_folder}/${folderName} (${pdfCount} PDF)`);
+          const extraMsg = hasExtraFiles ? ` ⚠ archivos extras: ${extraNames}` : "";
+          result.detalles.push(`OK: pedidos/raw/${client_folder}/${folderName} (${approvedPdfs.length} OC PDF)${extraMsg}`);
+
+          // Un solo pedido por llamada; el pipeline llama step0 en loop
+          break;
+
         } catch (e) {
           result.errores++;
           result.detalles.push(`ERROR en mensaje: ${String(e)}`);
         }
       }
+
+      if (result.procesados === 0 && result.saltados === 0 && result.errores === 0) {
+        result.detalles.push("No hay pedidos pendientes en INBOX (solo notificaciones OrderLoader)");
+      }
+
     } finally {
       lock.release();
     }
-    await client.logout();
+    await imapClient.logout();
   } catch (e) {
     result.errores++;
     result.detalles.push(`Error de conexión IMAP: ${String(e)}`);
