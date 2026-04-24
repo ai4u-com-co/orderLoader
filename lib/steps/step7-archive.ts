@@ -3,12 +3,17 @@
  *
  * Para cada pedido en estado NOTIFICADO:
  *   - Determina destino según resultado:
- *       Sin diferencias ni excluidos → "A A INGRESADO"
+ *       Sin diferencias ni excluidos → queda en "A B INGRESADO" (no mover)
  *       Con diferencias, excluidos o error → "A A REVISAR IA"
+ *       Email con archivos extra no aprobados → "A A SANDRA"
  *   - Marca el pedido como CERRADO
  *
  * Además limpia huérfanos: cualquier email en staging cuya OC ya
- * está CERRADO (duplicados del loop bug) se archiva al mismo destino.
+ * está CERRADO se archiva al mismo destino.
+ *
+ * Usa Message-ID del email para encontrar el UID real en staging,
+ * ya que el UID capturado en step0 puede ser el de INBOX (pre-move)
+ * cuando el servidor no soporta UIDPLUS.
  *
  * NOTIFICADO → CERRADO
  */
@@ -27,7 +32,7 @@ export interface StepResult {
 }
 
 const SOURCE_FOLDER = "INBOX.A B INGRESADO";
-const DEST_OK       = "INBOX.A B INGRESADO";
+const DEST_OK       = "INBOX.A B INGRESADO";  // queda en staging (no mover)
 const DEST_REVISAR  = "INBOX.A A REVISAR IA";
 const DEST_SANDRA   = "INBOX.A A SANDRA";
 
@@ -44,17 +49,19 @@ function isLimpio(row: Record<string, unknown>): boolean {
   return true;
 }
 
-type MoveJob = { uid: number; source: string; dest: string };
+type MoveJob = { uid: number; messageId?: string; source: string; dest: string };
 
 /** Lee todos los correo_metadata.json bajo pedidosRawDir y agrupa UIDs por orden_compra.
  *
- * Dos vías para identificar la OC de una carpeta de email:
- *   1. Sub-carpetas nombradas con el número de OC (caso normal: step1 procesó el PDF)
- *   2. Archivos *.done cuyo contenido es el número de OC (caso: step1 saltó la OC porque
- *      ya estaba CERRADA, escribe el .done pero no crea sub-carpeta)
+ * Vías para identificar la OC de una carpeta de email:
+ *   1. Sub-carpetas nombradas con el número de OC (step1 procesó el PDF correctamente)
+ *   2. Archivos *.done cuyo contenido es el número de OC (step1 saltó → OC en proceso)
+ *   3. Archivos *.retries o *.error → OC en el nombre del archivo (ej: 4500288469.PDF.retries)
  */
-function collectStagingUids(pedidosRawDir: string): Map<string, { uid: number; source: string }[]> {
-  const byOC = new Map<string, { uid: number; source: string }[]>();
+function collectStagingUids(
+  pedidosRawDir: string
+): Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string }[]> {
+  const byOC = new Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string }[]>();
   if (!fs.existsSync(pedidosRawDir)) return byOC;
 
   for (const cliente of fs.readdirSync(pedidosRawDir)) {
@@ -68,9 +75,11 @@ function collectStagingUids(pedidosRawDir: string): Map<string, { uid: number; s
       try {
         const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
         if (!meta.imap_uid || !meta.imap_staging_folder) continue;
-        const uid    = Number(meta.imap_uid);
-        const source = String(meta.imap_staging_folder);
-        const ocs    = new Set<string>();
+        const uid           = Number(meta.imap_uid);
+        const source        = String(meta.imap_staging_folder);
+        const messageId     = meta.message_id as string | undefined;
+        const hasExtraFiles = meta.has_extra_files === true;
+        const ocs           = new Set<string>();
 
         for (const entry of fs.readdirSync(carpetaPath)) {
           const entryPath = path.join(carpetaPath, entry);
@@ -85,16 +94,16 @@ function collectStagingUids(pedidosRawDir: string): Map<string, { uid: number; s
               if (oc) ocs.add(oc);
             } catch { /* skip */ }
           }
-          // Vía 3: archivo .retries → OC en el nombre del archivo (ej: 4500288469.PDF.retries)
-          else if (entry.endsWith(".retries")) {
-            const stem = entry.replace(/\.retries$/i, "").replace(/\.[^.]+$/, "");
+          // Vía 3: archivo .retries / .error → OC en el nombre (ej: 4500288469.PDF.retries)
+          else if (entry.endsWith(".retries") || entry.endsWith(".error")) {
+            const stem = entry.replace(/\.(retries|error)$/i, "").replace(/\.[^.]+$/, "");
             if (stem) ocs.add(stem);
           }
         }
 
         for (const oc of ocs) {
           const list = byOC.get(oc) ?? [];
-          list.push({ uid, source });
+          list.push({ uid, messageId, hasExtraFiles, source });
           byOC.set(oc, list);
         }
       } catch { /* skip */ }
@@ -110,9 +119,13 @@ async function moveInImap(
 ): Promise<void> {
   if (!moveJobs.length || !config.emailUser || !config.emailPass || !config.emailHost) return;
 
-  // Agrupa por carpeta fuente
+  // Filtrar jobs que ya están en el destino correcto (DEST_OK = staging, no mover)
+  const jobsToMove = moveJobs.filter(j => j.dest !== j.source);
+  if (!jobsToMove.length) return;
+
+  // Agrupar por carpeta fuente
   const bySrc = new Map<string, MoveJob[]>();
-  for (const job of moveJobs) {
+  for (const job of jobsToMove) {
     const list = bySrc.get(job.source) ?? [];
     list.push(job);
     bySrc.set(job.source, list);
@@ -128,18 +141,39 @@ async function moveInImap(
       await imap.connect();
       const lock = await imap.getMailboxLock(srcFolder);
       try {
-        try { await imap.mailboxCreate(DEST_OK); } catch { /* ya existe */ }
         try { await imap.mailboxCreate(DEST_REVISAR); } catch { /* ya existe */ }
         try { await imap.mailboxCreate(DEST_SANDRA); } catch { /* ya existe */ }
 
-        // Agrupar por destino; deduplicar UIDs
+        // ── Construir mapa: messageId → UIDs actuales en la carpeta fuente ──
+        // Usa el envelope IMAP que incluye messageId directamente.
+        const byMsgId = new Map<string, number[]>();
+        try {
+          for await (const msg of imap.fetch("1:*", { uid: true, envelope: true }, { uid: true })) {
+            const mid = msg.envelope?.messageId;
+            if (mid) {
+              const list = byMsgId.get(mid) ?? [];
+              list.push(msg.uid);
+              byMsgId.set(mid, list);
+            }
+          }
+        } catch { /* si falla el scan, usamos UIDs almacenados como fallback */ }
+
+        // ── Agrupar por destino, resolviendo UIDs via Message-ID ──
         const byDest = new Map<string, Set<number>>();
         for (const job of jobs) {
-          const s = byDest.get(job.dest) ?? new Set();
-          s.add(job.uid);
+          const s = byDest.get(job.dest) ?? new Set<number>();
+          let resolved = false;
+          if (job.messageId) {
+            const found = byMsgId.get(job.messageId) ?? [];
+            for (const u of found) s.add(u);
+            if (found.length > 0) resolved = true;
+          }
+          if (!resolved) s.add(job.uid); // fallback: UID almacenado en correo_metadata.json
           byDest.set(job.dest, s);
         }
+
         for (const [dest, uidSet] of byDest.entries()) {
+          if (uidSet.size === 0) continue;
           const uids = [...uidSet].map(String).join(",");
           await imap.messageMove(uids, dest, { uid: true });
           detalles.push(`✓ ${uidSet.size} correo(s) ${srcFolder} → ${dest}`);
@@ -171,15 +205,15 @@ export async function run(): Promise<StepResult> {
     const carpeta = row.carpeta_origen as string | null;
     if (!carpeta) continue;
     try {
-      const meta = JSON.parse(fs.readFileSync(path.join(carpeta, "correo_metadata.json"), "utf8"));
+      const meta      = JSON.parse(fs.readFileSync(path.join(carpeta, "correo_metadata.json"), "utf8"));
       if (!meta.imap_uid) continue;
-      const uid  = Number(meta.imap_uid);
-      const src  = meta.imap_staging_folder ?? SOURCE_FOLDER;
-      // Si el correo tenía archivos no aprobados → va a Sandra independientemente del resultado
-      const dest = meta.has_extra_files === true
+      const uid       = Number(meta.imap_uid);
+      const messageId = meta.message_id as string | undefined;
+      const src       = meta.imap_staging_folder ?? SOURCE_FOLDER;
+      const dest      = meta.has_extra_files === true
         ? DEST_SANDRA
         : (isLimpio(row) ? DEST_OK : DEST_REVISAR);
-      moveJobs.push({ uid, source: src, dest });
+      moveJobs.push({ uid, messageId, source: src, dest });
       destByOrden[String(row.orden_compra)] = dest;
     } catch { /* metadata no disponible */ }
   }
@@ -190,7 +224,7 @@ export async function run(): Promise<StepResult> {
   if (pendientes.length > 0) {
     db.transaction(() => {
       for (const row of pendientes) {
-        const oc = String(row.orden_compra);
+        const oc   = String(row.orden_compra);
         const dest = destByOrden[oc] ?? DEST_REVISAR;
         db.prepare("UPDATE pedidos_maestro SET estado='CERRADO', fase_actual=7 WHERE orden_compra=?").run(oc);
         logPipeline(db, oc, 7, "archive", "OK", `CERRADO → ${dest}`);
@@ -203,12 +237,9 @@ export async function run(): Promise<StepResult> {
   }
 
   // ── 2. Huérfanos: emails en staging cuya OC ya está CERRADO ─────────────
-  // Sucede cuando el mismo email se descargó varias veces (loop bug) o
-  // cuando el pipeline descargó un email cuya OC ya fue procesada antes.
   try {
     const stagingByOC = collectStagingUids(config.pedidosRawDir);
     if (stagingByOC.size > 0) {
-      // Consultar cuáles de esas OCs están CERRADO
       const cerrados = db.prepare(
         "SELECT * FROM pedidos_maestro WHERE estado = 'CERRADO'"
       ).all() as Array<Record<string, unknown>>;
@@ -219,9 +250,11 @@ export async function run(): Promise<StepResult> {
       for (const [oc, entries] of stagingByOC.entries()) {
         const row = cerradoMap.get(oc);
         if (!row) continue;
-        const dest = isLimpio(row) ? DEST_OK : DEST_REVISAR;
-        for (const { uid, source } of entries) {
-          orphanJobs.push({ uid, source, dest });
+        for (const { uid, messageId, hasExtraFiles, source } of entries) {
+          const dest = hasExtraFiles
+            ? DEST_SANDRA
+            : (isLimpio(row) ? DEST_OK : DEST_REVISAR);
+          orphanJobs.push({ uid, messageId, source, dest });
         }
       }
 

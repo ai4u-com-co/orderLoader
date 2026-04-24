@@ -135,12 +135,14 @@ export async function run(): Promise<StepResult> {
 
           // ── 2. Parsear EML para obtener todos los adjuntos ─────────────────────
           let parsedText = "";
+          let messageId  = "";
           const pdfAttachments: AttachmentInfo[]   = [];
           const otherAttachments: AttachmentInfo[] = [];
 
           if (msg.source) {
             const parsed = await simpleParser(msg.source);
             if (parsed.text) parsedText = parsed.text;
+            messageId = parsed.messageId ?? "";
 
             for (const att of parsed.attachments) {
               if (!att.filename) continue;
@@ -235,6 +237,7 @@ export async function run(): Promise<StepResult> {
               client: client_folder,
               folder_local: `pedidos/raw/${client_folder}/${folderName}`,
               imap_uid: storedUid,
+              message_id: messageId,
               imap_staging_folder: STAGING_FOLDER,
               n_adjuntos_pdf: approvedPdfs.length,
               has_extra_files: hasExtraFiles,
