@@ -9,7 +9,7 @@
 El sistema corre completamente en local usando Docker.
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 ```
 
 - **Dashboard**: [http://localhost:3000](http://localhost:3000)
@@ -69,7 +69,7 @@ Comodin, Hermeco, Exito, Eurocorsett, IndustriasCory, EstudioModa, PinturasPrime
 
 ```bash
 # Levantar en producción
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 # Ver logs del pipeline
 docker logs orderloader -f

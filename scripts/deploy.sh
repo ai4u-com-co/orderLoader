@@ -6,7 +6,7 @@ echo "🚀 Desplegando OrderLoader en Docker local..."
 cd "$(dirname "$0")/.."
 
 echo "🐳 Construyendo imagen y reiniciando contenedor..."
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 echo ""
 echo "✅ Contenedor corriendo:"

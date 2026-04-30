@@ -116,8 +116,7 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
       return await runSteps(stepsToRun, onStep);
     }
 
-  // Flujo completo (fromStep=0): loop unitario — 1 correo a la vez hasta vaciar bandeja
-  // Steps 1-5 corren por cada correo; steps 6-7 (notify+archive) corren UNA VEZ al final
+  // Flujo completo (fromStep=0): loop unitario — 1 correo a la vez, ciclo completo 0→7
   const allResults: StepResult[] = [];
   const uploadSteps = STEPS.filter(s => s.n >= 1 && s.n <= Math.min(toStep, 5));
   const finalSteps  = STEPS.filter(s => s.n >= 6 && s.n <= toStep);
@@ -150,10 +149,16 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
       allResults.push(downloadResult);
       onStep?.(downloadResult);
 
-      // Siempre correr steps 1-5: procesan tanto el correo recién descargado
-      // como cualquier correo en disco pendiente de iteraciones anteriores.
+      // Steps 1-5: procesar el correo recién descargado (idempotentes: saltan los ya procesados)
       const stepResults = await runSteps(uploadSteps, onStep);
       allResults.push(...stepResults);
+
+      // Steps 6-7: notificar y archivar el correo actual antes de pasar al siguiente
+      if (finalSteps.length > 0) {
+        await logoutSapClient();
+        const finalResults = await runSteps(finalSteps, onStep);
+        allResults.push(...finalResults);
+      }
 
       // Terminar loop si no hubo correos nuevos (bandeja vacía o error IMAP)
       if (downloadResult.procesados === 0) break;
@@ -179,13 +184,6 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
         });
         break;
       }
-    }
-
-    // Pasos 6-7: notificar y archivar UNA SOLA VEZ al final (1 email por lote)
-    if (finalSteps.length > 0) {
-      await logoutSapClient();
-      const finalResults = await runSteps(finalSteps, onStep);
-      allResults.push(...finalResults);
     }
 
     return allResults;

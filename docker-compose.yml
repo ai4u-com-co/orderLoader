@@ -1,3 +1,5 @@
+name: tamaprint-ol
+
 services:
   orderloader:
     build:
