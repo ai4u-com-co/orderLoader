@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import PedidoTable, { Pedido } from "@/components/PedidoTable";
 import RunPipelineButton from "@/components/RunPipelineButton";
 import PedidoDetail from "@/components/PedidoDetail";
@@ -86,14 +87,16 @@ export default function Home() {
               Automatización Email → SAP B1
             </Text>
           </div>
-          {lastRefresh && (
-            <time
-              className="ml-auto text-xs text-cadet-gray font-mono"
-              dateTime={lastRefresh.toISOString()}
-            >
-              {lastRefresh.toLocaleTimeString("es-CO")}
-            </time>
-          )}
+          <div className="ml-auto flex items-center gap-4">
+            <Link href="/clientes" className="text-xs text-cadet-gray hover:text-erie-black transition-colors font-mono">
+              Clientes →
+            </Link>
+            {lastRefresh && (
+              <time className="text-xs text-cadet-gray font-mono" dateTime={lastRefresh.toISOString()}>
+                {lastRefresh.toLocaleTimeString("es-CO")}
+              </time>
+            )}
+          </div>
         </div>
       </header>
 

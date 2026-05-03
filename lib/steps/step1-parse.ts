@@ -13,8 +13,8 @@ import { getDb, logPipeline } from "../db";
 import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
-import { PROMPT_COMODIN, PROMPT_EXITO, PROMPT_HERMECO, PROMPT_EUROCORSETT, PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME, PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO, PROMPT_ICVO, PROMPT_PRODUEMPAK, PROMPT_PROINTIMO, PROMPT_TERMIMODA } from "../prompts";
-import { detectClientFromPdf, esDirigidoATamaprint } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoATamaprint, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
+import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 
 export interface StepResult {
@@ -142,27 +142,7 @@ async function notificarPDFNoTamaprint(
   );
 }
 
-// ── Clientes soportados ───────────────────────────────────────────────────────
-
-const CLIENTES: Array<{ carpeta: string; nombre: string; prompt: string }> = [
-  { carpeta: "Comodin",     nombre: "COMODIN",     prompt: PROMPT_COMODIN     },
-  { carpeta: "Exito",       nombre: "EXITO",       prompt: PROMPT_EXITO       },
-  { carpeta: "Hermeco",     nombre: "HERMECO",     prompt: PROMPT_HERMECO     },
-  { carpeta: "Eurocorsett",    nombre: "EUROCORSETT",    prompt: PROMPT_EUROCORSETT    },
-  { carpeta: "IndustriasCory", nombre: "INDUSTRIASCORY", prompt: PROMPT_INDUSTRIASCORY },
-  { carpeta: "EstudioModa",    nombre: "ESTUDIOMODA",    prompt: PROMPT_ESTUDIOMODA    },
-  { carpeta: "PinturasPrime",  nombre: "PINTURASPRIME",  prompt: PROMPT_PINTURAS_PRIME },
-  { carpeta: "Manutex",        nombre: "MANUTEX",        prompt: PROMPT_MANUTEX        },
-  { carpeta: "ElGlobo",          nombre: "ELGLOBO",          prompt: PROMPT_ELGLOBO          },
-  { carpeta: "ServicioCompleto", nombre: "SERVICIOCOMPLETO", prompt: PROMPT_SERVICIO_COMPLETO },
-  { carpeta: "ICVO",             nombre: "ICVO",             prompt: PROMPT_ICVO             },
-  { carpeta: "Produempak",       nombre: "PRODUEMPAK",       prompt: PROMPT_PRODUEMPAK       },
-  { carpeta: "Prointimo",        nombre: "PROINTIMO",        prompt: PROMPT_PROINTIMO        },
-  { carpeta: "Termimoda",        nombre: "TERMIMODA",        prompt: PROMPT_TERMIMODA        },
-];
-
-// Todas las carpetas a escanear (incluye "Otros" para PDFs mal clasificados en step0)
-const CARPETAS_A_ESCANEAR = [...CLIENTES.map(c => c.carpeta), "Otros"];
+// CLIENT_NITS, CLIENT_TEXT_KEYWORDS, detectClientFromPdf importados desde lib/pdf-classify.ts
 
 // CLIENT_NITS, CLIENT_TEXT_KEYWORDS, detectClientFromPdf importados desde lib/pdf-classify.ts
 
@@ -178,6 +158,27 @@ export async function run(): Promise<StepResult> {
   }
 
   const db = getDb();
+
+  // Cargar clientes y prompts desde DB; fallback a hardcoded si tabla vacía
+  let clientesDb: Array<{ carpeta: string; nombre: string; prompt: string }> = [];
+  let clientNits = CLIENT_NITS;
+  let clientKeywords = CLIENT_TEXT_KEYWORDS;
+  try {
+    const rows = getClientes(db);
+    if (rows.length > 0) {
+      clientesDb = rows.filter(r => r.activo === 1).map(r => ({
+        carpeta: r.carpeta,
+        nombre:  r.nombre,
+        prompt:  r.prompt,
+      }));
+      const lists = loadClientListsFromDb(db);
+      clientNits     = lists.nits;
+      clientKeywords = lists.keywords;
+    }
+  } catch { /* DB podría no tener tabla aún */ }
+
+  const CLIENTES = clientesDb.length > 0 ? clientesDb : [];
+  const CARPETAS_A_ESCANEAR = [...CLIENTES.map(c => c.carpeta), "Otros"];
   // Solo bloqueamos si la OC está siendo procesada en este momento por otra instancia.
   // Estados terminales (CERRADO, ERROR_*, NOTIFICADO) se permiten re-procesar:
   // SAP es la única fuente de verdad para detectar duplicados reales (step3).
@@ -247,7 +248,7 @@ export async function run(): Promise<StepResult> {
           }
 
           // ── Detectar cliente desde el PDF (fuente de verdad) ──────────────
-          const detectedCarpeta = detectClientFromPdf(parsed.text)?.carpeta ?? null;
+          const detectedCarpeta = detectClientFromPdf(parsed.text, clientNits, clientKeywords)?.carpeta ?? null;
           const clienteInfo = CLIENTES.find(c => c.carpeta === detectedCarpeta);
 
           if (!clienteInfo) {

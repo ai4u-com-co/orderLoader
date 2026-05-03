@@ -13,6 +13,8 @@ import { CLIENT_NITS } from "./pdf-classify";
 
 export type AttachmentTipo = 'orden_compra' | 'firma_logo' | 'documento_relevante' | 'desconocido';
 
+export type ClientNitList = Array<{ carpeta: string; nits: string[] }>;
+
 export interface AttachmentForTriage {
   filename: string;
   tipoArchivo: 'pdf' | 'imagen' | 'otro';
@@ -32,11 +34,12 @@ export interface TriageResult {
   razon: string;
 }
 
-const SYSTEM_PROMPT = `Eres un agente de triage para Tamaprint, empresa colombiana de impresión.
+function buildSystemPrompt(clientNits: ClientNitList): string {
+  return `Eres un agente de triage para Tamaprint, empresa colombiana de impresión.
 Tu tarea: clasificar cada adjunto de un correo de pedidos.
 
 CLIENTES APROBADOS (NIT → carpeta):
-${CLIENT_NITS.map(c => `  ${c.nits[0]} → ${c.carpeta}`).join('\n')}
+${clientNits.map(c => `  ${c.nits[0]} → ${c.carpeta}`).join('\n')}
 
 TIPOS DE CLASIFICACIÓN:
 - "orden_compra": orden de compra dirigida a Tamaprint, de un cliente aprobado
@@ -52,6 +55,7 @@ REGLAS:
 
 Responde SOLO con JSON array (sin explicaciones, sin markdown):
 [{"filename":"...","tipo":"...","cliente":"Carpeta o null","razon":"una línea breve"}]`;
+}
 
 export const TRIAGE_MODEL = 'claude-haiku-4-5-20251001';
 
@@ -62,7 +66,8 @@ export interface TriageResponse {
 }
 
 export async function triageEmailAttachments(
-  attachments: AttachmentForTriage[]
+  attachments: AttachmentForTriage[],
+  clientNits: ClientNitList = CLIENT_NITS,
 ): Promise<TriageResponse | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -148,7 +153,7 @@ export async function triageEmailAttachments(
       model: TRIAGE_MODEL,
       max_tokens: 1024,
       temperature: 0,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(clientNits),
       messages: [{ role: 'user', content: contentBlocks }],
     });
 

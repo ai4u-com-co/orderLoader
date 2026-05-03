@@ -69,18 +69,44 @@ export interface ClientDetection {
  * Paso 1: busca NIT normalizado (quita puntos para matchear "800.069.933" = "800069933").
  * Paso 2: keywords de marca como fallback (solo si no hay NIT).
  *
- * Retorna { carpeta, metodo } o null si no se reconoce.
+ * Acepta listas opcionales para usar clientes cargados desde DB en lugar de los hardcodeados.
  */
-export function detectClientFromPdf(pdfText: string): ClientDetection | null {
+export function detectClientFromPdf(
+  pdfText: string,
+  clientNits: Array<{ carpeta: string; nits: string[] }> = CLIENT_NITS,
+  clientKeywords: Array<{ carpeta: string; keywords: string[] }> = CLIENT_TEXT_KEYWORDS,
+): ClientDetection | null {
   const normalized = pdfText.replace(/\./g, "");
-  for (const { carpeta, nits } of CLIENT_NITS) {
+  for (const { carpeta, nits } of clientNits) {
     if (nits.some(nit => normalized.includes(nit))) return { carpeta, metodo: 'nit' };
   }
 
   const lower = pdfText.toLowerCase();
-  for (const { carpeta, keywords } of CLIENT_TEXT_KEYWORDS) {
+  for (const { carpeta, keywords } of clientKeywords) {
     if (keywords.some(kw => lower.includes(kw))) return { carpeta, metodo: 'keyword' };
   }
 
   return null;
+}
+
+/**
+ * Carga las listas de clientes desde la DB para usar en detección dinámica.
+ * Retorna las listas hardcodeadas como fallback si la DB no tiene registros.
+ */
+export function loadClientListsFromDb(db: import("better-sqlite3").Database): {
+  nits: Array<{ carpeta: string; nits: string[] }>;
+  keywords: Array<{ carpeta: string; keywords: string[] }>;
+} {
+  try {
+    const rows = db.prepare(
+      "SELECT carpeta, nits_json, keywords_json FROM clientes_aprobados WHERE activo = 1 ORDER BY nombre ASC"
+    ).all() as Array<{ carpeta: string; nits_json: string; keywords_json: string }>;
+    if (rows.length === 0) return { nits: CLIENT_NITS, keywords: CLIENT_TEXT_KEYWORDS };
+    return {
+      nits:     rows.map(r => ({ carpeta: r.carpeta, nits:     JSON.parse(r.nits_json)     as string[] })),
+      keywords: rows.map(r => ({ carpeta: r.carpeta, keywords: JSON.parse(r.keywords_json) as string[] })),
+    };
+  } catch {
+    return { nits: CLIENT_NITS, keywords: CLIENT_TEXT_KEYWORDS };
+  }
 }

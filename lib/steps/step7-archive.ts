@@ -1,12 +1,16 @@
 /**
  * Step 7: Archivar correos originales en IMAP y cerrar pedidos.
  *
+ * Los correos llegan a este step en "A A REVISAR IA" (destino inicial de step0).
  * Para cada pedido en estado NOTIFICADO:
- *   - Determina destino según resultado:
- *       Limpio, sin archivos extra → queda en "A B INGRESADO" (no mover)
- *       Limpio + archivos extra no aprobados → "A A SANDRA"
- *       Con diferencias, excluidos o error (con o sin archivos extra) → "A A REVISAR IA"
+ *   - Determina destino final según resultado:
+ *       Limpio, sin archivos extra → "A B INGRESADO"   (mover desde REVISAR IA)
+ *       Limpio + archivos extra    → "A A SANDRA"       (mover desde REVISAR IA)
+ *       Con diferencias / error    → "A A REVISAR IA"   (ya está, no mover)
  *   - Marca el pedido como CERRADO
+ *
+ * Si step7 falla a mitad, los correos no movidos quedan en "A A REVISAR IA"
+ * — estado seguro, visible para humanos, nunca se pierden.
  *
  * Además limpia huérfanos: cualquier email en staging cuya OC ya
  * está CERRADO se archiva al mismo destino.
@@ -31,8 +35,8 @@ export interface StepResult {
   detalles: string[];
 }
 
-const SOURCE_FOLDER = "INBOX.A B INGRESADO";
-const DEST_OK       = "INBOX.A B INGRESADO";  // queda en staging (no mover)
+const SOURCE_FOLDER = "INBOX.A A REVISAR IA";  // fallback: step0 guarda imap_staging_folder en metadata
+const DEST_OK       = "INBOX.A B INGRESADO";   // destino para pedidos limpios (mover desde REVISAR IA)
 const DEST_REVISAR  = "INBOX.A A REVISAR IA";
 const DEST_SANDRA   = "INBOX.A A SANDRA";
 
@@ -119,7 +123,7 @@ async function moveInImap(
 ): Promise<void> {
   if (!moveJobs.length || !config.emailUser || !config.emailPass || !config.emailHost) return;
 
-  // Filtrar jobs que ya están en el destino correcto (DEST_OK = staging, no mover)
+  // Filtrar jobs donde src == dest (DEST_REVISAR = REVISAR IA = staging, ya están ahí)
   const jobsToMove = moveJobs.filter(j => j.dest !== j.source);
   if (!jobsToMove.length) return;
 

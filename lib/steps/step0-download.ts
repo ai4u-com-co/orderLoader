@@ -6,7 +6,11 @@
  *   2. Ningún adjunto PDF               → A A SANDRA
  *   3. Ningún PDF es OC de cliente aprobado dirigido a Tamaprint → A A SANDRA
  *   4. Hay PDFs aprobados + otros archivos → procesa los aprobados, correo a A A SANDRA
- *   5. Solo PDFs aprobados              → pipeline normal (A B INGRESADO → step7 decide final)
+ *   5. Solo PDFs aprobados              → pipeline normal (A A REVISAR IA → step7 decide final)
+ *
+ * Default pesimista: todo correo con OC va primero a "A A REVISAR IA".
+ * Step7 lo mueve a "A B INGRESADO" solo si el proceso termina limpio.
+ * Si el sistema falla en cualquier punto, el correo permanece visible en REVISAR IA.
  *
  * El campo has_extra_files en correo_metadata.json indica a step7 si el correo
  * debe ir a A A SANDRA al final, independientemente del resultado del pipeline.
@@ -21,7 +25,7 @@ import {
   getDb, logPipeline, ensureWorkspaceDirs,
   insertPendingMove, completePendingMove, failPendingMove, getPendingMoves,
 } from "../db";
-import { detectClientFromPdf, esDirigidoATamaprint } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoATamaprint, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
 import { triageEmailAttachments, prepareImageForTriage, TRIAGE_MODEL, type AttachmentForTriage, type TriageResult } from "../ai-triage";
 
 export interface StepResult {
@@ -51,6 +55,8 @@ interface PdfClassification {
 
 async function clasificarPdfs(
   pdfs: AttachmentInfo[],
+  clientNits: Array<{ carpeta: string; nits: string[] }>,
+  clientKeywords: Array<{ carpeta: string; keywords: string[] }>,
   textsOut?: Map<string, string>
 ): Promise<PdfClassification[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -60,7 +66,7 @@ async function clasificarPdfs(
     try {
       const { text } = await pdfParseFn(pdf.content);
       if (textsOut) textsOut.set(pdf.filename, text);
-      const detection   = detectClientFromPdf(text);
+      const detection   = detectClientFromPdf(text, clientNits, clientKeywords);
       const isTamaprint = esDirigidoATamaprint(text);
       results.push({
         filename: pdf.filename,
@@ -91,7 +97,8 @@ function esImagen(filename: string): boolean {
 async function ejecutarTriageIA(
   clasificados: PdfClassification[],
   otherAttachments: AttachmentInfo[],
-  pdfTexts: Map<string, string>
+  pdfTexts: Map<string, string>,
+  clientNits: Array<{ carpeta: string; nits: string[] }> = CLIENT_NITS,
 ): Promise<{ results: TriageResult[]; inputTokens: number; outputTokens: number } | null> {
   const attachments: AttachmentForTriage[] = [];
 
@@ -119,10 +126,10 @@ async function ejecutarTriageIA(
     }
   }
 
-  return triageEmailAttachments(attachments);
+  return triageEmailAttachments(attachments, clientNits);
 }
 
-const STAGING_FOLDER = "INBOX.A B INGRESADO";
+const STAGING_FOLDER = "INBOX.A A REVISAR IA";
 const SANDRA_FOLDER  = "INBOX.A A SANDRA";
 
 async function moveToSandra(imapClient: ImapFlow, uid: number): Promise<void> {
@@ -248,6 +255,14 @@ export async function run(): Promise<StepResult> {
     return result;
   }
 
+  // Cargar clientes desde DB; fallback a hardcoded si DB no disponible
+  let clientNits = CLIENT_NITS;
+  let clientKeywords = CLIENT_TEXT_KEYWORDS;
+  try {
+    const lists = loadClientListsFromDb(getDb());
+    if (lists.nits.length > 0) { clientNits = lists.nits; clientKeywords = lists.keywords; }
+  } catch { /* DB podría no existir aún en primer arranque */ }
+
   const imapClient = new ImapFlow({
     host: config.emailHost,
     port: config.emailPort,
@@ -259,6 +274,7 @@ export async function run(): Promise<StepResult> {
   try {
     await imapClient.connect();
     await imapClient.mailboxCreate(SANDRA_FOLDER).catch(() => {});
+    await imapClient.mailboxCreate(STAGING_FOLDER).catch(() => {});
 
     const lock = await imapClient.getMailboxLock("INBOX");
     const createdFolders = new Set<string>();
@@ -324,10 +340,10 @@ export async function run(): Promise<StepResult> {
 
           // ── 4. Clasificar cada PDF por su contenido interno ───────────────────
           const pdfTexts = new Map<string, string>();
-          const clasificados = await clasificarPdfs(pdfAttachments, pdfTexts);
+          const clasificados = await clasificarPdfs(pdfAttachments, clientNits, clientKeywords, pdfTexts);
 
           // ── 5. Triage IA: confirma cliente y filtra firmas/logos ──────────────
-          const triageResponse = await ejecutarTriageIA(clasificados, otherAttachments, pdfTexts);
+          const triageResponse = await ejecutarTriageIA(clasificados, otherAttachments, pdfTexts, clientNits);
           const triageResults: TriageResult[] | null = triageResponse?.results ?? null;
 
           // Ajustar clasificación de PDFs según IA

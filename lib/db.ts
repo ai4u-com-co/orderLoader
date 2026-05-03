@@ -70,6 +70,23 @@ export function getDb(): Database.Database {
   _db = new Database(config.dbPath);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
+  // Migración incremental: crear tabla si no existe en DBs anteriores al feature de clientes
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS clientes_aprobados (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      carpeta          TEXT NOT NULL UNIQUE,
+      nombre           TEXT NOT NULL,
+      nit_principal    TEXT NOT NULL,
+      nits_json        TEXT NOT NULL DEFAULT '[]',
+      keywords_json    TEXT NOT NULL DEFAULT '[]',
+      card_code        TEXT NOT NULL,
+      prompt           TEXT NOT NULL DEFAULT '',
+      activo           INTEGER NOT NULL DEFAULT 1,
+      ts_creado        TEXT DEFAULT (datetime('now')),
+      ts_modificado    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_clientes_nit ON clientes_aprobados(nit_principal);
+  `);
   return _db;
 }
 
@@ -142,11 +159,26 @@ export function migrate(): void {
       ts_completado    TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS clientes_aprobados (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      carpeta          TEXT NOT NULL UNIQUE,
+      nombre           TEXT NOT NULL,
+      nit_principal    TEXT NOT NULL,
+      nits_json        TEXT NOT NULL DEFAULT '[]',
+      keywords_json    TEXT NOT NULL DEFAULT '[]',
+      card_code        TEXT NOT NULL,
+      prompt           TEXT NOT NULL DEFAULT '',
+      activo           INTEGER NOT NULL DEFAULT 1,
+      ts_creado        TEXT DEFAULT (datetime('now')),
+      ts_modificado    TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_maestro_estado ON pedidos_maestro(estado);
     CREATE INDEX IF NOT EXISTS idx_maestro_fecha  ON pedidos_maestro(fecha_recepcion);
     CREATE INDEX IF NOT EXISTS idx_detalle_oc     ON pedidos_detalle(orden_compra);
     CREATE INDEX IF NOT EXISTS idx_log_oc         ON pipeline_log(orden_compra);
     CREATE INDEX IF NOT EXISTS idx_pending_moves  ON imap_pending_moves(estado);
+    CREATE INDEX IF NOT EXISTS idx_clientes_nit   ON clientes_aprobados(nit_principal);
   `);
 
   // Migraciones para columnas agregadas después de la creación inicial
@@ -250,6 +282,66 @@ export function getPendingMoves(db: Database.Database): ImapPendingMove[] {
   return db.prepare(
     `SELECT * FROM imap_pending_moves WHERE estado='PENDIENTE' ORDER BY ts_creado ASC`
   ).all() as ImapPendingMove[];
+}
+
+export interface ClienteAprobado {
+  id: number;
+  carpeta: string;
+  nombre: string;
+  nit_principal: string;
+  nits_json: string;
+  keywords_json: string;
+  card_code: string;
+  prompt: string;
+  activo: number;
+  ts_creado: string;
+  ts_modificado: string;
+}
+
+export function getClientes(db: Database.Database): ClienteAprobado[] {
+  return db.prepare(
+    "SELECT * FROM clientes_aprobados ORDER BY nombre ASC"
+  ).all() as ClienteAprobado[];
+}
+
+export function getClienteByCarpeta(db: Database.Database, carpeta: string): ClienteAprobado | null {
+  return (db.prepare("SELECT * FROM clientes_aprobados WHERE carpeta = ?").get(carpeta) ?? null) as ClienteAprobado | null;
+}
+
+export function getClienteById(db: Database.Database, id: number): ClienteAprobado | null {
+  return (db.prepare("SELECT * FROM clientes_aprobados WHERE id = ?").get(id) ?? null) as ClienteAprobado | null;
+}
+
+export function getClienteByNit(db: Database.Database, nit: string): ClienteAprobado | null {
+  return (db.prepare(
+    "SELECT * FROM clientes_aprobados WHERE nit_principal = ? OR nits_json LIKE ?"
+  ).get(nit, `%"${nit}"%`) ?? null) as ClienteAprobado | null;
+}
+
+export function upsertCliente(db: Database.Database, data: {
+  carpeta: string; nombre: string; nit_principal: string;
+  nits_json: string; keywords_json: string; card_code: string; prompt: string; activo?: number;
+}): number {
+  const result = db.prepare(`
+    INSERT INTO clientes_aprobados (carpeta, nombre, nit_principal, nits_json, keywords_json, card_code, prompt, activo)
+    VALUES (@carpeta, @nombre, @nit_principal, @nits_json, @keywords_json, @card_code, @prompt, @activo)
+    ON CONFLICT(carpeta) DO UPDATE SET
+      nombre = excluded.nombre, nit_principal = excluded.nit_principal,
+      nits_json = excluded.nits_json, keywords_json = excluded.keywords_json,
+      card_code = excluded.card_code, prompt = excluded.prompt,
+      activo = excluded.activo, ts_modificado = datetime('now')
+  `).run({ ...data, activo: data.activo ?? 1 });
+  return result.lastInsertRowid as number;
+}
+
+export function updateCliente(db: Database.Database, id: number, data: {
+  nombre?: string; nit_principal?: string; nits_json?: string;
+  keywords_json?: string; card_code?: string; prompt?: string; activo?: number;
+}): void {
+  const fields = Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined);
+  if (fields.length === 0) return;
+  const sets = [...fields.map(f => `${f} = @${f}`), "ts_modificado = datetime('now')"].join(", ");
+  db.prepare(`UPDATE clientes_aprobados SET ${sets} WHERE id = @id`).run({ ...data, id });
 }
 
 export function ensureWorkspaceDirs(): void {
