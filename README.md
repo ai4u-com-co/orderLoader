@@ -1,4 +1,4 @@
-# 📦 OrderLoader 3.0
+# 📦 OrderLoader 3.0 (Google Cloud Deployed)
 
 **OrderLoader** es una solución automatizada de nivel empresarial diseñada para la ingesta de pedidos en **SAP Business One**. Utiliza Inteligencia Artificial (Anthropic Claude) para transformar documentos PDF no estructurados en datos precisos listos para el ERP.
 
