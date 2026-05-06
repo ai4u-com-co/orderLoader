@@ -10,6 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { CLIENT_NITS } from "./pdf-classify";
+import { withAnthropicRetry } from "./anthropic-retry";
 
 export type AttachmentTipo = 'orden_compra' | 'firma_logo' | 'documento_relevante' | 'desconocido';
 
@@ -149,13 +150,13 @@ export async function triageEmailAttachments(
   }
 
   try {
-    const msg = await client.messages.create({
+    const msg = await withAnthropicRetry(() => client.messages.create({
       model: TRIAGE_MODEL,
       max_tokens: 1024,
       temperature: 0,
       system: buildSystemPrompt(clientNits),
       messages: [{ role: 'user', content: contentBlocks }],
-    });
+    }));
 
     const inputTokens = msg.usage?.input_tokens ?? 0;
     const outputTokens = msg.usage?.output_tokens ?? 0;

@@ -16,6 +16,7 @@ export type { SapB1Order };
 import { detectClientFromPdf, esDirigidoATamaprint, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
+import { withAnthropicRetry } from "../anthropic-retry";
 
 export interface StepResult {
   procesados: number;
@@ -44,13 +45,13 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
   const { pages } = await pdfToImages(pdfBuffer);
   const visionContent = buildVisionContent(pages);
 
-  const msg = await client.messages.create({
+  const msg = await withAnthropicRetry(() => client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
     temperature: 0,
     system: prompt,
     messages: [{ role: "user", content: visionContent }],
-  });
+  }));
 
   const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
   const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
