@@ -37,6 +37,8 @@ export const CLIENT_NITS: Array<{ carpeta: string; nits: string[] }> = [
   { carpeta: "Produempak",       nits: ["900445797"] },
   { carpeta: "Prointimo",        nits: ["811042428"] },
   { carpeta: "Termimoda",        nits: ["900447263"] },
+  { carpeta: "Byspro",           nits: ["805018724"] },
+  { carpeta: "LaimaSas",         nits: ["900461923"] },
 ];
 
 // ── Clientes aprobados — keywords de marca (fallback) ─────────────────────────
@@ -56,6 +58,8 @@ export const CLIENT_TEXT_KEYWORDS: Array<{ carpeta: string; keywords: string[] }
   { carpeta: "Produempak",       keywords: ["produempak", "900445797"] },
   { carpeta: "Prointimo",        keywords: ["prointimo", "811042428"] },
   { carpeta: "Termimoda",        keywords: ["termimoda", "900447263"] },
+  { carpeta: "Byspro",           keywords: ["byspro", "805018724"] },
+  { carpeta: "LaimaSas",         keywords: ["laima sas", "laima s.a.s.", "900461923"] },
 ];
 
 export interface ClientDetection {

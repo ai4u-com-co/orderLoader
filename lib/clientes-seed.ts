@@ -9,6 +9,7 @@ import {
   PROMPT_INDUSTRIASCORY, PROMPT_ESTUDIOMODA, PROMPT_PINTURAS_PRIME,
   PROMPT_MANUTEX, PROMPT_ELGLOBO, PROMPT_SERVICIO_COMPLETO,
   PROMPT_ICVO, PROMPT_PRODUEMPAK, PROMPT_PROINTIMO, PROMPT_TERMIMODA,
+  PROMPT_BYSPRO, PROMPT_LAIMA,
 } from "./prompts";
 
 const PROMPTS_BY_CARPETA: Record<string, string> = {
@@ -26,6 +27,8 @@ const PROMPTS_BY_CARPETA: Record<string, string> = {
   Produempak:       PROMPT_PRODUEMPAK,
   Prointimo:        PROMPT_PROINTIMO,
   Termimoda:        PROMPT_TERMIMODA,
+  Byspro:           PROMPT_BYSPRO,
+  LaimaSas:         PROMPT_LAIMA,
 };
 
 const CARD_CODES: Record<string, string> = {
@@ -43,6 +46,8 @@ const CARD_CODES: Record<string, string> = {
   "900445797": "CN900445797",
   "811042428": "CN811042428",
   "900447263": "CN900447263",
+  "805018724": "CN805018724",
+  "900461923": "CN900461923",
 };
 
 const KEYWORDS_BY_CARPETA: Record<string, string[]> = Object.fromEntries(
