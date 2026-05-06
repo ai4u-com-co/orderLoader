@@ -1,31 +1,27 @@
-name: CI — Build check
+name: Deploy OrderLoader to GCP
 
 on:
   push:
     branches:
       - main
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Executing remote ssh commands
+        uses: appleboy/ssh-action@master
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build
-        run: npm run build
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/orderLoader
+            git pull origin main
+            docker compose up -d --build
+            # Asegurar permisos de la base de datos después de actualizar
+            docker exec -u root orderloader chown -R node:node /app/.data
+            docker exec -u root orderloader chmod -R 777 /app/.data
