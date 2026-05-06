@@ -42,18 +42,19 @@ Analyze the provided purchase order document and generate a JSON object that fai
 
 ### 1. INITIAL ANALYSIS
 * Completely examine the purchase order document
-* Identify and count the total number of unique items/products
+* Identify and count the total number of unique items/products — DO NOT group or merge identical items
 * Navigate to the last page to locate the summary totals
+* Note the ORDER in which items appear — the output must preserve this exact order
 * Mentally record item count for subsequent validation
 
 ### 2. DATA EXTRACTION
 * **Order details**:
-  * Order number (NumAtCard) → [IDENTIFY THE FIELD NAME IN THIS DOCUMENT]
+  * Order number (NumAtCard) → [IDENTIFY THE FIELD NAME IN THIS DOCUMENT] — extract as a plain string, number format rules do NOT apply to this field
   * General delivery date (DocDueDate) → [IDENTIFY THE FIELD NAME IN THIS DOCUMENT]
   * Document date (DocDate) → Today's date at time of processing (NOT from the document)
   * Tax date (TaxDate) → The emission/elaboration date printed on the PDF
   * Observations / remarks (Comments) → Verbatim text from observations section, "" if none
-* **Individual items**: For each product:
+* **Individual items**: Extract in the SAME ORDER as they appear in the PDF — DO NOT group identical items:
   * Product code (SupplierCatNum) → [IDENTIFY THE COLUMN NAME IN THIS DOCUMENT]
   * Quantity (Quantity) → [IDENTIFY THE COLUMN NAME]
   * Unit price (UnitPrice) → [IDENTIFY THE COLUMN NAME]. Use 0 if not printed.
@@ -70,7 +71,23 @@ Analyze the provided purchase order document and generate a JSON object that fai
 
 **DocDate**: ALWAYS today's processing date in YYYYMMDD (NOT any date from the document)
 
-**[NUMBER FORMAT RULES — fill in based on detected format]**
+**[NUMBER FORMAT RULES — fill in ONE of the two blocks below based on the detected format, then delete the other]**
+
+**IF COLOMBIAN FORMAT** (dot=thousands, comma=decimal):
+* **Dot (.) = thousands separator ONLY — NEVER a decimal point in COP amounts**
+  * "444.000" → 444000 (NOT 444.0) | "1.321" → 1321 (NOT 1.321, NOT 1.32)
+* **Comma (,) = decimal separator**: "444.000,50" → 444000.50 | "222,00" → 222.00
+* **CROSS-VALIDATION MANDATORY**: After extracting each line verify UnitPrice × Quantity ≈ Subtotal printed.
+  If it does NOT match, you confused the Price column with the Subtotal column — re-read the document.
+  Example: Qty=500, UnitPrice=444.000→444000, Subtotal=222.000.000→222000000. Check: 444000×500=222000000 ✓
+  The Subtotal column is NEVER the price. If check fails, the price you extracted is wrong.
+
+**IF AMERICAN FORMAT** (comma=thousands, dot=decimal):
+* **Comma (,) = thousands separator**: "9,000" → 9000 | "2,016,000" → 2016000
+* **Dot (.) = decimal separator**: "28.00" → 28 | "2,150.00" → 2150
+* **CROSS-VALIDATION MANDATORY**: After extracting each line verify UnitPrice × Quantity ≈ Subtotal printed.
+  If it does NOT match, you confused the Price column with the Subtotal column — re-read the document.
+  The Subtotal column is NEVER the price. If check fails, the price you extracted is wrong.
 
 **Missing fields**: Use empty string ""
 
@@ -79,13 +96,13 @@ Analyze the provided purchase order document and generate a JSON object that fai
 | Source | JSON Field | Notes |
 |--------|-----------|-------|
 | Fixed constant | DocType | Always "dDocument_Items" |
-| [order number field] | NumAtCard | String |
+| [order number field] | NumAtCard | Plain string — no number format rules |
 | Fixed constant | CardCode | Always "[CARD_CODE_HERE]" |
 | Today's date | DocDate | YYYYMMDD — NOT from document |
 | [delivery date field] | DocDueDate | YYYYMMDD |
 | [emission date field] | TaxDate | YYYYMMDD |
 | [observations field] | Comments | Verbatim, "" if absent |
-| [product code column] | DocumentLines[].SupplierCatNum | String |
+| [product code column] | DocumentLines[].SupplierCatNum | String, same order as PDF |
 | [quantity column] | DocumentLines[].Quantity | Number |
 | [unit price column] | DocumentLines[].UnitPrice | Decimal, 0 if absent |
 | [delivery date column] | DocumentLines[].DeliveryDate | YYYYMMDD |
@@ -97,7 +114,8 @@ Before generating the response, verify:
 - ✅ DocDate is today's processing date in YYYYMMDD (NOT from the document)
 - ✅ All dates in YYYYMMDD format
 - ✅ Numbers use correct format (no thousands separators, dot for decimal)
-- ✅ UnitPrice × Quantity ≈ line subtotal for every row
+- ✅ UnitPrice × Quantity ≈ line subtotal for every row — if not, the price column is wrong
+- ✅ DocumentLines preserves the same item order as the PDF — no grouping of identical items
 - ✅ Valid JSON syntax — no trailing commas, no extra fields
 
 ## RESPONSE FORMAT
@@ -106,7 +124,7 @@ Before generating the response, verify:
 
 Fill in ALL placeholders [LIKE THIS] in the template based on what you see in this specific document.
 Replace [CARD_CODE_HERE] with the actual card_code you identified.
-Add specific number format rules in section 3 based on whether the document uses colombian or american format.
+In section 3: keep ONLY the number format block that matches this document (colombian or american), delete the other block entirely. Fill in with specific examples from THIS document.
 The resulting prompt field must be complete, self-contained, and ready to use — no placeholders remaining.`;
 
 export async function POST(req: NextRequest) {
