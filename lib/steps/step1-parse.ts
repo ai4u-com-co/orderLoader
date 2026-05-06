@@ -88,22 +88,22 @@ function insertSapOrder(
   const fechaP = yyyymmddToIso(order.DocDate);
   const fechaG = yyyymmddToIso(order.DocDueDate);
 
-  db.prepare("DELETE FROM pedidos_detalle WHERE orden_compra = ?").run(order.NumAtCard);
-
-  const ins = db.prepare(`
-    INSERT INTO pedidos_detalle
-      (orden_compra, codigo_producto, descripcion, cantidad, precio_unitario, subtotal_item, fecha_entrega)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  // Calcular subtotal antes de insertar para poder escribir maestro primero (FK requiere maestro antes que detalle)
   let subtotalTotal = 0;
-  for (const line of order.DocumentLines) {
+  const lineas = order.DocumentLines.map(line => {
     const precio = line.UnitPrice ?? 0;
     const subtotalLinea = precio * line.Quantity;
     subtotalTotal += subtotalLinea;
-    const fechaLinea = line.DeliveryDate ? yyyymmddToIso(line.DeliveryDate) : fechaG;
-    const desc = line.FreeText ?? "";
-    ins.run(order.NumAtCard, line.SupplierCatNum, desc, line.Quantity, precio, subtotalLinea, fechaLinea);
-  }
+    return {
+      oc: order.NumAtCard,
+      sku: line.SupplierCatNum,
+      desc: line.FreeText ?? "",
+      qty: line.Quantity,
+      precio,
+      subtotalLinea,
+      fechaLinea: line.DeliveryDate ? yyyymmddToIso(line.DeliveryDate) : fechaG,
+    };
+  });
 
   db.prepare(`
     INSERT OR REPLACE INTO pedidos_maestro
@@ -111,6 +111,17 @@ function insertSapOrder(
        cliente_nombre, subtotal, notas, estado, ts_parsed, fase_actual, carpeta_origen)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'PARSED', ?, 1, ?)
   `).run(nit, order.NumAtCard, fechaP, fechaG, clienteNombre, subtotalTotal, `TaxDate:${order.TaxDate}`, now, carpeta);
+
+  db.prepare("DELETE FROM pedidos_detalle WHERE orden_compra = ?").run(order.NumAtCard);
+
+  const ins = db.prepare(`
+    INSERT INTO pedidos_detalle
+      (orden_compra, codigo_producto, descripcion, cantidad, precio_unitario, subtotal_item, fecha_entrega)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const l of lineas) {
+    ins.run(l.oc, l.sku, l.desc, l.qty, l.precio, l.subtotalLinea, l.fechaLinea);
+  }
 }
 
 // esDirigidoATamaprint y detectClientFromPdf importados desde lib/pdf-classify.ts
