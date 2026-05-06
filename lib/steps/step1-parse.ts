@@ -248,9 +248,13 @@ export async function run(): Promise<StepResult> {
         try {
           const buffer = fs.readFileSync(path.join(carpetaPath, pdfFile));
           const parsed = await pdfParseFn(buffer);
+          const pdfText = parsed.text ?? '';
+          const textIsEmpty = pdfText.trim().length < 50;
 
-          // PDF no dirigido a Tamaprint → silencio + marker de skip + alerta
-          if (!esDirigidoATamaprint(parsed.text)) {
+          // PDF no dirigido a Tamaprint → alerta solo si hay texto extraíble.
+          // Si el texto está vacío (PDF con fuentes vectoriales), confiar en la
+          // carpeta asignada por step0 que ya validó el correo.
+          if (!textIsEmpty && !esDirigidoATamaprint(pdfText)) {
             result.saltados++;
             result.detalles.push(`  → No dirigido a Tamaprint — omitido`);
             logPipeline(db, carpetaNombre, 1, "parse", "OK", `${pdfFile}: no es pedido Tamaprint`);
@@ -259,9 +263,11 @@ export async function run(): Promise<StepResult> {
             continue;
           }
 
-          // ── Detectar cliente desde el PDF (fuente de verdad) ──────────────
-          const detectedCarpeta = detectClientFromPdf(parsed.text, clientNits, clientKeywords)?.carpeta ?? null;
-          const clienteInfo = CLIENTES.find(c => c.carpeta === detectedCarpeta);
+          // ── Detectar cliente desde el PDF; si texto vacío usar carpeta del correo ──
+          const detectedCarpeta = !textIsEmpty
+            ? detectClientFromPdf(pdfText, clientNits, clientKeywords)?.carpeta ?? null
+            : carpeta;
+          const clienteInfo = CLIENTES.find(c => c.carpeta === (detectedCarpeta ?? carpeta));
 
           if (!clienteInfo) {
             result.saltados++;
