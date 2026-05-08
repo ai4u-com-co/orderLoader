@@ -32,6 +32,12 @@ function yyyymmddToIso(d: string): string {
   return d;
 }
 
+function todayYYYYMMDD(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ── AI Parser ─────────────────────────────────────────────────────────────────
 
 async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Order | null, string, { input?: number, output?: number }]> {
@@ -61,6 +67,11 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
 
   try {
     const rawOrder = JSON.parse(clean);
+
+    // Fechas por defecto si el AI no pudo leerlas del PDF
+    const isValidYYYYMMDD = (v: unknown) => typeof v === "string" && /^\d{8}$/.test(v);
+    if (!isValidYYYYMMDD(rawOrder.TaxDate))    rawOrder.TaxDate    = todayYYYYMMDD();
+    if (!isValidYYYYMMDD(rawOrder.DocDueDate)) rawOrder.DocDueDate = todayYYYYMMDD(15);
 
     // Validación estricta con Zod
     const result = SapB1OrderSchema.safeParse(rawOrder);
