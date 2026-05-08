@@ -165,18 +165,27 @@ export async function run(): Promise<StepResult> {
           });
         }
 
-        // Precio (SAP puede usar "Price" o "UnitPrice") — tolerancia 0%
+        // Precio — tolerancia 0%
         // UnitPrice = precio de lista antes de descuento; Price = precio neto post-descuento.
-        // Comparar contra UnitPrice para detectar discrepancias reales con la OC.
-        const pdfPrice = pdfLine.UnitPrice ?? 0;
-        const sapPrice = Number(sapLine.UnitPrice ?? sapLine.Price ?? 0);
+        const pdfPrice   = pdfLine.UnitPrice ?? 0;
+        const sapUnit    = Number(sapLine.UnitPrice ?? 0);
+        const sapNetPrice = Number(sapLine.Price ?? sapUnit);
+
         if (pdfPrice > 0) {
-          // Comparar en centavos para evitar ruido de punto flotante
-          if (Math.round(pdfPrice * 100) !== Math.round(sapPrice * 100)) {
+          // 1) Precio por unidad (antes de descuento) debe coincidir con la OC
+          if (Math.round(pdfPrice * 100) !== Math.round(sapUnit * 100)) {
             diferencias.push({
-              campo: `Precio [${pdfLine.SupplierCatNum}]`,
+              campo: `Precio unitario [${pdfLine.SupplierCatNum}]`,
               pdf: pdfPrice,
-              sap: sapPrice,
+              sap: sapUnit,
+            });
+          }
+          // 2) Precio neto (tras descuento) también debe coincidir — no manejamos descuentos
+          if (Math.round(pdfPrice * 100) !== Math.round(sapNetPrice * 100)) {
+            diferencias.push({
+              campo: `Precio neto/descuento [${pdfLine.SupplierCatNum}]`,
+              pdf: pdfPrice,
+              sap: sapNetPrice,
             });
           }
         }
