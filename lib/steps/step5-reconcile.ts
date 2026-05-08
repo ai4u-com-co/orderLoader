@@ -166,8 +166,10 @@ export async function run(): Promise<StepResult> {
         }
 
         // Precio (SAP puede usar "Price" o "UnitPrice") — tolerancia 0%
+        // UnitPrice = precio de lista antes de descuento; Price = precio neto post-descuento.
+        // Comparar contra UnitPrice para detectar discrepancias reales con la OC.
         const pdfPrice = pdfLine.UnitPrice ?? 0;
-        const sapPrice = Number(sapLine.Price ?? sapLine.UnitPrice ?? 0);
+        const sapPrice = Number(sapLine.UnitPrice ?? sapLine.Price ?? 0);
         if (pdfPrice > 0) {
           // Comparar en centavos para evitar ruido de punto flotante
           if (Math.round(pdfPrice * 100) !== Math.round(sapPrice * 100)) {
@@ -190,7 +192,7 @@ export async function run(): Promise<StepResult> {
         WHERE orden_compra=? AND LTRIM(codigo_producto, '0')=LTRIM(?, '0')
       `);
       for (const sapLine of sapLines) {
-        const sapPrice = Number(sapLine.Price ?? sapLine.UnitPrice ?? 0);
+        const sapPrice = Number(sapLine.UnitPrice ?? sapLine.Price ?? 0);
         const qty      = Number(sapLine.Quantity ?? 0);
         if (sapPrice > 0) {
           updDetalle.run(sapPrice, sapPrice * qty, oc, String(sapLine.SupplierCatNum ?? ""));
