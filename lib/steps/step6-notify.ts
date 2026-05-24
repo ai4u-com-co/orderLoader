@@ -117,7 +117,7 @@ export async function run(): Promise<StepResult> {
       await transporter.sendMail({
         from: config.emailUser,
         to: config.notifyEmail,
-        cc: "pedidos@tamaprint.com",
+        ...(config.notifyCcEmail ? { cc: config.notifyCcEmail } : {}),
         subject: buildSubjectForOrder(row, hasExtraFiles),
         html,
         attachments: [

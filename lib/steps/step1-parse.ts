@@ -13,7 +13,7 @@ import { getDb, logPipeline } from "../db";
 import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
-import { detectClientFromPdf, esDirigidoATamaprint, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
@@ -153,7 +153,7 @@ function insertSapOrder(
   }
 }
 
-// esDirigidoATamaprint y detectClientFromPdf importados desde lib/pdf-classify.ts
+// esDirigidoAEmpresa y detectClientFromPdf importados desde lib/pdf-classify.ts
 
 async function notificarPDFNoTamaprint(
   cliente: string,
@@ -265,13 +265,13 @@ export async function run(): Promise<StepResult> {
           const pdfText = parsed.text ?? '';
           const textIsEmpty = pdfText.trim().length < 50;
 
-          // PDF no dirigido a Tamaprint → alerta solo si hay texto extraíble.
+          // PDF no dirigido a la empresa receptora → alerta solo si hay texto extraíble.
           // Si el texto está vacío (PDF con fuentes vectoriales), confiar en la
           // carpeta asignada por step0 que ya validó el correo.
-          if (!textIsEmpty && !esDirigidoATamaprint(pdfText)) {
+          if (!textIsEmpty && !esDirigidoAEmpresa(pdfText, config.receptorKeywords)) {
             result.saltados++;
-            result.detalles.push(`  → No dirigido a Tamaprint — omitido`);
-            logPipeline(db, carpetaNombre, 1, "parse", "OK", `${pdfFile}: no es pedido Tamaprint`);
+            result.detalles.push(`  → No dirigido a ${config.tenant} — omitido`);
+            logPipeline(db, carpetaNombre, 1, "parse", "OK", `${pdfFile}: no dirigido a ${config.tenant}`);
             fs.writeFileSync(skipMarker, "");
             await notificarPDFNoTamaprint(carpeta, carpetaNombre, pdfFile).catch(() => {});
             continue;

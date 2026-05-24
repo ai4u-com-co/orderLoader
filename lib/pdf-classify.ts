@@ -1,13 +1,13 @@
 /**
  * Clasificación de PDFs por contenido: identificación de cliente aprobado
- * y verificación de que el documento está dirigido a Tamaprint.
+ * y verificación de que el documento está dirigido a la empresa receptora.
  *
  * Fuente de verdad compartida entre step0 (pre-triage) y step1 (parse).
  */
 
-// ── Tamaprint ─────────────────────────────────────────────────────────────────
+// ── Detección de empresa receptora ────────────────────────────────────────────
 
-const TAMAPRINT_KEYWORDS = [
+export const TAMAPRINT_RECEPTOR_KEYWORDS = [
   "tamaprint",
   "tama print",
   "900851655",   // NIT sin dígito de verificación
@@ -15,9 +15,23 @@ const TAMAPRINT_KEYWORDS = [
   "900.851.655", // NIT con puntos
 ];
 
-export function esDirigidoATamaprint(pdfText: string): boolean {
+export const FLEXO_RECEPTOR_KEYWORDS = [
+  "flexo impresos",
+  "flexoimpresos",
+  "900528680",   // NIT sin dígito de verificación
+  "9005286800",  // NIT con dígito de verificación
+  "900.528.680", // NIT con puntos
+];
+
+/** Genérica: verifica si el PDF está dirigido a la empresa cuyas keywords se pasan. */
+export function esDirigidoAEmpresa(pdfText: string, keywords: string[]): boolean {
   const lower = pdfText.toLowerCase();
-  return TAMAPRINT_KEYWORDS.some(kw => lower.includes(kw));
+  return keywords.some(kw => lower.includes(kw.toLowerCase()));
+}
+
+/** @deprecated Usar esDirigidoAEmpresa con config.receptorKeywords */
+export function esDirigidoATamaprint(pdfText: string): boolean {
+  return esDirigidoAEmpresa(pdfText, TAMAPRINT_RECEPTOR_KEYWORDS);
 }
 
 // ── Clientes aprobados — NITs (señal principal) ────────────────────────────────

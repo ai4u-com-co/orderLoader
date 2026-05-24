@@ -25,7 +25,7 @@ import {
   getDb, logPipeline, ensureWorkspaceDirs,
   insertPendingMove, completePendingMove, failPendingMove, getPendingMoves,
 } from "../db";
-import { detectClientFromPdf, esDirigidoATamaprint, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
 import { triageEmailAttachments, prepareImageForTriage, TRIAGE_MODEL, type AttachmentForTriage, type TriageResult } from "../ai-triage";
 
 export interface StepResult {
@@ -57,6 +57,7 @@ async function clasificarPdfs(
   pdfs: AttachmentInfo[],
   clientNits: Array<{ carpeta: string; nits: string[] }>,
   clientKeywords: Array<{ carpeta: string; keywords: string[] }>,
+  receptorKeywords: string[],
   textsOut?: Map<string, string>
 ): Promise<PdfClassification[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -67,7 +68,7 @@ async function clasificarPdfs(
       const { text } = await pdfParseFn(pdf.content);
       if (textsOut) textsOut.set(pdf.filename, text);
       const detection   = detectClientFromPdf(text, clientNits, clientKeywords);
-      const isTamaprint = esDirigidoATamaprint(text);
+      const isTamaprint = esDirigidoAEmpresa(text, receptorKeywords);
       results.push({
         filename: pdf.filename,
         content:  pdf.content,
@@ -351,7 +352,7 @@ export async function run(): Promise<StepResult> {
 
           // ── 4. Clasificar cada PDF por su contenido interno ───────────────────
           const pdfTexts = new Map<string, string>();
-          const clasificados = await clasificarPdfs(pdfAttachments, clientNits, clientKeywords, pdfTexts);
+          const clasificados = await clasificarPdfs(pdfAttachments, clientNits, clientKeywords, config.receptorKeywords, pdfTexts);
 
           // ── 5. Triage IA: confirma cliente y filtra firmas/logos ──────────────
           const triageResponse = await ejecutarTriageIA(clasificados, otherAttachments, pdfTexts, clientNits, subject);

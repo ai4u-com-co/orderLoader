@@ -1,6 +1,8 @@
 import path from "path";
+import { TAMAPRINT_RECEPTOR_KEYWORDS, FLEXO_RECEPTOR_KEYWORDS } from "./pdf-classify";
 
 export type EmailProvider = "imap" | "microsoft";
+export type Tenant = "tamaprint" | "flexoimpresos";
 
 export interface Config {
   // Paths
@@ -25,6 +27,7 @@ export interface Config {
   smtpHost: string;
   smtpPort: number;
   notifyEmail: string;
+  notifyCcEmail: string;
   notifyAlertasEmail: string;
 
   // SAP B1
@@ -32,6 +35,10 @@ export interface Config {
   sapUser: string;
   sapPass: string;
   sapCompany: string;
+
+  // Tenant
+  tenant: Tenant;
+  receptorKeywords: string[];
 }
 
 const REQUIRED_ENV: [string, string][] = [
@@ -93,6 +100,7 @@ export function getConfig(): Config {
     smtpHost,
     smtpPort: parseInt(process.env.EMAIL_SMTP_PORT ?? "587"),
     notifyEmail: process.env.NOTIFY_EMAIL ?? emailUser,
+    notifyCcEmail: process.env.NOTIFY_CC_EMAIL ?? "",
     notifyAlertasEmail:
       process.env.NOTIFY_ALERTAS_EMAIL ||
       process.env.NOTIFY_EMAIL ||
@@ -102,6 +110,11 @@ export function getConfig(): Config {
     sapUser: process.env.SAP_B1_USER ?? "",
     sapPass: process.env.SAP_B1_PASS ?? "",
     sapCompany: process.env.SAP_B1_COMPANY ?? "",
+
+    tenant: (process.env.TENANT ?? "tamaprint") as Tenant,
+    receptorKeywords: process.env.TENANT === "flexoimpresos"
+      ? FLEXO_RECEPTOR_KEYWORDS
+      : TAMAPRINT_RECEPTOR_KEYWORDS,
   };
 
   return _config;
