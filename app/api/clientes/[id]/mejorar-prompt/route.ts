@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getDb, getClienteById } from "@/lib/db";
 import { withAnthropicRetry } from "@/lib/anthropic-retry";
+import { pdfToImages, buildVisionContent } from "@/lib/pdf-vision";
 
 export const maxDuration = 60;
 
@@ -10,6 +11,7 @@ const IMPROVEMENT_PROMPT = `You are an expert prompt engineer specializing in do
 You will receive:
 1. An existing extraction prompt that instructs an AI to parse purchase order PDFs and return JSON for SAP B1.
 2. A set of correction notes written by the operator after observing real errors or missing rules.
+3. Optionally, a sample purchase order document (image or extracted text) from the real client.
 
 Your task: rewrite the extraction prompt incorporating ALL the corrections described in the notes.
 
@@ -20,6 +22,7 @@ Rules you MUST follow:
 - If a note adds a new field-name alias, add it to the relevant DATA EXTRACTION step and the FIELD MAPPING table.
 - If a note corrects a number format rule or adds a cross-validation example, update section 3 (DATA TRANSFORMATION) in place.
 - If a note describes a structural edge case (e.g. duplicate lines, multi-page headers), add a clearly labelled sub-rule in the EXTRACTION PROCESS section.
+- If a document sample is provided, use it to understand the exact column names, layout, and format of the purchase order and tailor field extraction rules accordingly.
 - Do NOT add sections that were not present in the original unless absolutely necessary for clarity.
 - Do NOT change the CardCode value, DocType constant, or any fixed values unless explicitly instructed in the notes.
 - Do NOT include markdown fences, preamble, or commentary in your response.
@@ -35,8 +38,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const existing = getClienteById(db, Number(id));
     if (!existing) return NextResponse.json({ ok: false, error: "Cliente no encontrado" }, { status: 404 });
 
-    const body = await req.json() as { prompt?: string; notes?: string };
-    if (!body.prompt?.trim() || !body.notes?.trim()) {
+    const formData = await req.formData();
+    const promptVal = formData.get("prompt") as string | null;
+    const notesVal  = formData.get("notes")  as string | null;
+    const file      = formData.get("file")   as File   | null;
+
+    if (!promptVal?.trim() || !notesVal?.trim()) {
       return NextResponse.json({ ok: false, error: "Se requieren prompt y notas" }, { status: 400 });
     }
 
@@ -45,7 +52,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const client = new Anthropic({ apiKey });
 
-    const userMessage = `<original_prompt>\n${body.prompt}\n</original_prompt>\n\n<correction_notes>\n${body.notes}\n</correction_notes>`;
+    const baseText = `<original_prompt>\n${promptVal}\n</original_prompt>\n\n<correction_notes>\n${notesVal}\n</correction_notes>`;
+
+    // Build message content — plain text, PDF (extracted), or image (vision)
+    let messageContent: Anthropic.MessageParam["content"];
+
+    if (file && file.size > 0) {
+      const buffer   = Buffer.from(await file.arrayBuffer());
+      const isPdf    = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isImage  = file.type.startsWith("image/");
+
+      if (isPdf) {
+        const { pages } = await pdfToImages(buffer);
+        const visionPages = buildVisionContent(pages.slice(0, 4));
+        messageContent = [
+          ...visionPages,
+          { type: "text" as const, text: baseText },
+        ];
+      } else if (isImage) {
+        const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+        type ImageMediaType = typeof validTypes[number];
+        const mediaType: ImageMediaType = validTypes.includes(file.type as ImageMediaType)
+          ? file.type as ImageMediaType
+          : "image/jpeg";
+        messageContent = [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } },
+          { type: "text", text: baseText },
+        ];
+      } else {
+        messageContent = baseText;
+      }
+    } else {
+      messageContent = baseText;
+    }
 
     let msg: Anthropic.Message | null = null;
     let lastError: unknown = null;
@@ -57,7 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           max_tokens: 8192,
           temperature: 0,
           system: IMPROVEMENT_PROMPT,
-          messages: [{ role: "user", content: userMessage }],
+          messages: [{ role: "user", content: messageContent }],
         }));
         console.log(`[mejorar-prompt] Modelo usado: ${model}`);
         break;

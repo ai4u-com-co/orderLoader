@@ -39,6 +39,7 @@ export default function ClienteDetailPage() {
 
   // AI iteration state (ephemeral, not saved to DB)
   const [notes,          setNotes]          = useState("");
+  const [attachedFile,   setAttachedFile]   = useState<File | null>(null);
   const [improving,      setImproving]      = useState(false);
   const [improvedPrompt, setImprovedPrompt] = useState<string | null>(null);
   const [iterError,      setIterError]      = useState<string | null>(null);
@@ -93,10 +94,13 @@ export default function ClienteDetailPage() {
     setImprovedPrompt(null);
     setIterError(null);
     try {
+      const fd = new FormData();
+      fd.append("prompt", prompt);
+      fd.append("notes", notes);
+      if (attachedFile) fd.append("file", attachedFile);
       const res = await fetch(`/api/clientes/${id}/mejorar-prompt`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, notes }),
+        body: fd,
       });
       const data = await res.json() as { ok: boolean; improved_prompt?: string; error?: string };
       if (data.ok && data.improved_prompt) {
@@ -284,6 +288,39 @@ export default function ClienteDetailPage() {
                   spellCheck={false}
                 />
               </label>
+
+              {/* Adjunto de OC */}
+              <div className="flex items-center gap-2 mt-2">
+                <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs text-cadet-gray hover:text-erie-black border border-erie-black/20 rounded-lg px-3 py-1.5 bg-white hover:bg-erie-black/5 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <span>{attachedFile ? attachedFile.name : "Adjuntar PDF o imagen de OC"}</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,image/*"
+                    onChange={e => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (f && f.size > 5 * 1024 * 1024) {
+                        setIterError("El archivo no puede superar 5 MB");
+                        return;
+                      }
+                      setAttachedFile(f);
+                      setImprovedPrompt(null);
+                      setIterError(null);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {attachedFile && (
+                  <button
+                    className="text-xs text-cadet-gray hover:text-hot-orange transition-colors"
+                    onClick={() => setAttachedFile(null)}
+                  >
+                    ✕ quitar
+                  </button>
+                )}
+                <span className="text-xs text-cadet-gray/60">Opcional — PDF o imagen de una OC real para dar contexto a la IA</span>
+              </div>
 
               <div className="flex justify-end mt-3">
                 <Button
