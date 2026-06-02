@@ -71,7 +71,7 @@ export function validarSapB1Json(order: SapB1Order, clienteNombre: string): stri
     if (!line.SupplierCatNum?.trim()) {
       errores.push(`${ref}: SupplierCatNum vacío`);
     } else {
-      if (!["EXITO", "ELGLOBO", "PRODUEMPAK"].includes(clienteNombre) && /^0/.test(line.SupplierCatNum))
+      if (!["EXITO", "ELGLOBO", "PRODUEMPAK", "NewStetic"].includes(clienteNombre) && /^0/.test(line.SupplierCatNum))
         errores.push(`${ref}: SupplierCatNum '${line.SupplierCatNum}' tiene cero inicial`);
       vistos.add(line.SupplierCatNum);
     }
