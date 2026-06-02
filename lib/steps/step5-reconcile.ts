@@ -141,13 +141,18 @@ export async function run(): Promise<StepResult> {
       }
 
       // ── Comparar cada línea por SupplierCatNum ───────────────────────────
-      // Normalizar: quitar ceros iniciales para que "014007383" === "14007383"
+      // Primero intenta match exacto; si no hay, intenta sin ceros iniciales en ambos lados.
+      // Esto soporta clientes donde SAP guarda códigos CON ceros (ej: "0021446") y
+      // clientes donde SAP guarda sin ceros (ej: "14007383001").
       const normCat = (s: string) => String(s ?? "").replace(/^0+/, "") || "0";
+      const findSapLine = (pdfCat: string) => {
+        const exact = sapLines.find(l => String(l.SupplierCatNum ?? "") === pdfCat);
+        if (exact) return exact;
+        return sapLines.find(l => normCat(String(l.SupplierCatNum ?? "")) === normCat(pdfCat));
+      };
 
       for (const pdfLine of pdfLinesActivas) {
-        const sapLine = sapLines.find(
-          l => normCat(String(l.SupplierCatNum ?? "")) === normCat(String(pdfLine.SupplierCatNum))
-        );
+        const sapLine = findSapLine(String(pdfLine.SupplierCatNum));
         if (!sapLine) {
           diferencias.push({
             campo: `Artículo faltante en SAP`,
