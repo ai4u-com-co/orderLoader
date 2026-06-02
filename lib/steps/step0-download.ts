@@ -366,8 +366,10 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
         const sender     = msg.from?.emailAddress?.address ?? "";
         const dateHeader = msg.receivedDateTime ?? new Date().toISOString();
 
-        if (subject.includes("[OrderLoader]")) {
-          result.detalles.push(`INBOX (notif OrderLoader): "${subject}"`);
+        const isOwnNotification = subject.includes("[OrderLoader]") ||
+          sender.toLowerCase() === config.emailUser.toLowerCase();
+        if (isOwnNotification) {
+          result.detalles.push(`INBOX (notif propia): "${subject}" de ${sender}`);
           continue;
         }
 

@@ -25,7 +25,7 @@ export interface StepResult {
 
 // ── Validaciones de formato ──────────────────────────────────────────────────
 
-export function validarSapB1Json(order: SapB1Order, clienteNombre: string): string[] {
+export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): string[] {
   const errores: string[] = [];
   const { cardCodePrefix } = getConfig();
   const cardCodeRegex = new RegExp(`^${cardCodePrefix}\\d+$`);
@@ -71,8 +71,6 @@ export function validarSapB1Json(order: SapB1Order, clienteNombre: string): stri
     if (!line.SupplierCatNum?.trim()) {
       errores.push(`${ref}: SupplierCatNum vacío`);
     } else {
-      if (!["EXITO", "ELGLOBO", "PRODUEMPAK", "NewStetic"].includes(clienteNombre) && /^0/.test(line.SupplierCatNum))
-        errores.push(`${ref}: SupplierCatNum '${line.SupplierCatNum}' tiene cero inicial`);
       vistos.add(line.SupplierCatNum);
     }
 
