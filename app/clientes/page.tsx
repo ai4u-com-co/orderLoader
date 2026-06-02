@@ -35,20 +35,24 @@ type ModalState =
   | { step: "guardando" };
 
 export default function ClientesPage() {
-  const [clientes, setClientes]   = useState<Cliente[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [modal, setModal]         = useState<ModalState>({ step: "closed" });
-  const [formData, setFormData]   = useState<Propuesta | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const fileInputRef              = useRef<HTMLInputElement>(null);
+  const [clientes, setClientes]         = useState<Cliente[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+  const [modal, setModal]               = useState<ModalState>({ step: "closed" });
+  const [formData, setFormData]         = useState<Propuesta | null>(null);
+  const [saveError, setSaveError]       = useState<string | null>(null);
+  const [cardCodePrefix, setCardCodePrefix] = useState("CN");
+  const fileInputRef                    = useRef<HTMLInputElement>(null);
 
   const fetchClientes = useCallback(async () => {
     try {
       const res  = await fetch("/api/clientes");
-      const data = await res.json() as { ok: boolean; clientes?: Cliente[]; error?: string };
-      if (data.ok) { setClientes(data.clientes ?? []); setError(null); }
-      else setError(data.error ?? "Error desconocido");
+      const data = await res.json() as { ok: boolean; clientes?: Cliente[]; cardCodePrefix?: string; error?: string };
+      if (data.ok) {
+        setClientes(data.clientes ?? []);
+        if (data.cardCodePrefix) setCardCodePrefix(data.cardCodePrefix);
+        setError(null);
+      } else setError(data.error ?? "Error desconocido");
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }, []);
@@ -285,7 +289,7 @@ export default function ClientesPage() {
                   <label className="flex flex-col gap-1">
                     <span className="text-xs font-semibold text-cadet-gray">NIT</span>
                     <input className="border border-erie-black/20 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-moderate-blue/30"
-                      value={formData.nit} onChange={e => setFormData(p => p ? { ...p, nit: e.target.value, card_code: `CN${e.target.value}` } : p)} />
+                      value={formData.nit} onChange={e => setFormData(p => p ? { ...p, nit: e.target.value, card_code: `${cardCodePrefix}${e.target.value}` } : p)} />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-xs font-semibold text-cadet-gray">CardCode SAP</span>

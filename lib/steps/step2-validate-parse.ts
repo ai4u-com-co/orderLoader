@@ -10,6 +10,7 @@
 import fs from "fs";
 import path from "path";
 import { getDb, logPipeline } from "../db";
+import { getConfig } from "../config";
 import { sendAlertEmail } from "../mailer";
 import { getSapClient, clearSapClient } from "../sap-client";
 import type { SapB1Order } from "./step1-parse";
@@ -26,12 +27,14 @@ export interface StepResult {
 
 export function validarSapB1Json(order: SapB1Order, clienteNombre: string): string[] {
   const errores: string[] = [];
+  const { cardCodePrefix } = getConfig();
+  const cardCodeRegex = new RegExp(`^${cardCodePrefix}\\d+$`);
 
   // Campos fijos
   if (order.DocType !== "dDocument_Items")
     errores.push(`DocType inválido: '${order.DocType}' (esperado 'dDocument_Items')`);
-  if (!/^CN\d+$/.test(order.CardCode ?? ""))
-    errores.push(`CardCode inválido: '${order.CardCode}' (debe ser CN seguido de dígitos)`);
+  if (!cardCodeRegex.test(order.CardCode ?? ""))
+    errores.push(`CardCode inválido: '${order.CardCode}' (debe ser ${cardCodePrefix} seguido de dígitos)`);
   if (!/^[A-Za-z0-9][A-Za-z0-9\-\.\/]{2,19}$/.test(order.NumAtCard ?? ""))
     errores.push(`NumAtCard inválido: '${order.NumAtCard}'`);
 

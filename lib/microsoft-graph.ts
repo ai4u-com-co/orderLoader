@@ -65,8 +65,10 @@ async function gPost(token: string, path: string, body: unknown): Promise<unknow
     const text = await res.text();
     throw new Error(`Graph POST ${path}: ${res.status} ${text.slice(0, 300)}`);
   }
-  if (res.status === 204) return null;
-  return res.json();
+  if (res.status === 204 || res.status === 202) return null;
+  const text = await res.text();
+  if (!text) return null;
+  return JSON.parse(text);
 }
 
 async function gPatch(token: string, path: string, body: unknown): Promise<void> {

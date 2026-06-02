@@ -113,7 +113,8 @@ export default function ClienteDetailPage() {
 
   function handleNitChange(v: string) {
     setNit(v);
-    setCardCode(`CN${v}`);
+    const prefix = cardCode.match(/^([^\d]+)/)?.[1] ?? "CN";
+    setCardCode(`${prefix}${v}`);
   }
 
   const isDirty = cliente ? (

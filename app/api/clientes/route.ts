@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, getClientes, upsertCliente } from "@/lib/db";
+import { getConfig } from "@/lib/config";
 
 export async function GET() {
   try {
@@ -9,7 +10,8 @@ export async function GET() {
       nits:     JSON.parse(c.nits_json)     as string[],
       keywords: JSON.parse(c.keywords_json) as string[],
     }));
-    return NextResponse.json({ ok: true, clientes });
+    const { cardCodePrefix } = getConfig();
+    return NextResponse.json({ ok: true, clientes, cardCodePrefix });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
