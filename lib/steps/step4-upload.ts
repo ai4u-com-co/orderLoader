@@ -176,7 +176,8 @@ export async function run(): Promise<StepResult> {
         DocumentLines: lineas.map(l => ({
           SupplierCatNum: l.SupplierCatNum,
           Quantity: l.Quantity,
-          FreeText: l.FreeText,
+          // SAP B1 DocumentLine.FreeText max = 100 chars
+          FreeText: (l.FreeText ?? "").slice(0, 100),
           ShipDate: yyyymmddToIso(l.DeliveryDate ?? aiData.DocDueDate),
         })),
       };

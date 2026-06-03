@@ -37,20 +37,34 @@ function statusColors(estado: string, esParcial: boolean) {
 
 const SAP_ERROR_CODES: Record<string, string> = {
   "-1116": "Artículo sin precio en la lista de precios de SAP — pedido NO creado",
-  "-8112": "Error en datos del documento (serie de numeración o socio de negocio) — pedido NO creado",
+  "-8112": "Un campo del documento excede el límite de caracteres permitido por SAP — pedido NO creado",
   "-10":   "Sin autorización en SAP — pedido NO creado",
 };
 
 function parseSapError(errorMsg: string): string {
-  const codeMatch = errorMsg.match(/"code"\s*:\s*"(-?\d+)"/);
+  // Strip verbose prefixes to get closer to the SAP payload:
+  //   "Backend POST https://... → 502: SAP POST /Orders falló (400): {...}"
+  //   "Error: SAP POST https://... → 400: {...}"
+  const stripped = errorMsg
+    .replace(/^Error:\s+/i, "")
+    .replace(/^Backend\s+\w+\s+https?:\/\/\S+\s*→\s*\d+:\s*/i, "")
+    .replace(/^SAP\s+\w+\s+\/\S*\s+fall[oó][^:]*:\s*/i, "")
+    .trim();
+
+  // SAP B1 Service Layer: code can be integer (-5002) or string ("-5002")
+  const codeMatch = stripped.match(/"code"\s*:\s*"?(-?\d+)"?/);
   if (codeMatch) {
     const code = codeMatch[1];
     if (SAP_ERROR_CODES[code]) return SAP_ERROR_CODES[code];
-    const msgMatch = errorMsg.match(/"message"\s*:\s*"([^"]{4,})"/);
-    if (msgMatch) return `Error SAP (${code}): ${msgMatch[1].slice(0, 100)} — pedido NO creado`;
+    // Nested format: {"error":{"code":N,"message":{"lang":"...","value":"..."}}}
+    const valueMatch = stripped.match(/"value"\s*:\s*"([^"]{4,})"/);
+    if (valueMatch) return `Error SAP (${code}): ${valueMatch[1].slice(0, 150)} — pedido NO creado`;
+    // Flat format: {"message":"..."}
+    const msgMatch = stripped.match(/"message"\s*:\s*"([^"]{4,})"/);
+    if (msgMatch) return `Error SAP (${code}): ${msgMatch[1].slice(0, 150)} — pedido NO creado`;
     return `Error SAP (código ${code}) — pedido NO creado`;
   }
-  return errorMsg.replace(/Error: SAP \w+ https?:\/\/\S+ → \d+:\s*/i, "").slice(0, 120);
+  return stripped.slice(0, 200);
 }
 
 function cleanErrorMessage(errorMsg: string): string {
