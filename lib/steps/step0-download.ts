@@ -748,8 +748,12 @@ export async function run(): Promise<StepResult> {
           const dateHeader = envelope?.date?.toISOString() ?? new Date().toISOString();
 
           // ── 1. Notificación propia de OrderLoader → dejar en INBOX ────────────
-          if (subject.includes("[OrderLoader]")) {
-            result.detalles.push(`INBOX (notif OrderLoader): "${subject}"`);
+          // Verificar tanto asunto como remitente: los correos CC enviados desde
+          // pedidos@tamaprint.com al mismo buzón no tienen [OrderLoader] siempre visible.
+          const isOwnNotification = subject.includes("[OrderLoader]") ||
+            sender.toLowerCase() === config.emailUser.toLowerCase();
+          if (isOwnNotification) {
+            result.detalles.push(`INBOX (notif OrderLoader): "${subject}" de ${sender}`);
             continue;
           }
 
