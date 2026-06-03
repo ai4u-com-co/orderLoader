@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Instalar dependencias puras (incluyendo devDependencies para el build)
-RUN npm ci
+RUN npm ci --no-audit --no-fund && npm cache clean --force
 
 # Copiar resto del código fuente del proyecto
 COPY . .
