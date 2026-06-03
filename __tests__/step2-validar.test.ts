@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { validarSapB1Json } from "@/lib/steps/step2-validate-parse";
 import type { SapB1Order } from "@/lib/steps/step1-parse";
+
+vi.mock("@/lib/config", () => ({
+  getConfig: () => ({ cardCodePrefix: "CN" }),
+}));
 
 // ── Fixture base válido ───────────────────────────────────────────────────────
 
