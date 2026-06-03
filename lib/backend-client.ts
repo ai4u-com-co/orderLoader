@@ -86,6 +86,13 @@ export class SapBackendClient {
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
+        // When the backend returns rawErrors detail, use it for a clearer message
+        try {
+          const json = JSON.parse(text) as { error?: string; detail?: string };
+          if (json.detail) throw new Error(`Backend ${method} ${url} → ${res.status}: ${json.detail}`);
+        } catch (parseErr) {
+          if (parseErr instanceof Error && parseErr.message.startsWith("Backend ")) throw parseErr;
+        }
         throw new Error(`Backend ${method} ${url} → ${res.status}: ${text}`);
       }
 
