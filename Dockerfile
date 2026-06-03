@@ -20,7 +20,11 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Compilar Next.js (esto generará .next/standalone si lo configuramos en next.config.ts)
-RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/app/.next/cache npm run build
+RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/app/.next \
+    npm run build && \
+    mkdir -p /app/dist && \
+    cp -r /app/.next/standalone /app/dist/standalone && \
+    cp -r /app/.next/static /app/dist/static
 
 # Stage 2: Imagen de producción mínima
 FROM node:20-alpine AS runner
@@ -44,9 +48,8 @@ COPY --from=builder /app/public ./public
 # Crear directorios y transferir ownership al usuario node (UID 1000)
 RUN mkdir -p .next .data && chown -R node:node /app
 
-# Las apps 'standalone' agrupan los node_modules necesarios.
-COPY --from=builder --chown=node:node /app/.next/standalone ./
-COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/dist/standalone ./
+COPY --from=builder --chown=node:node /app/dist/static ./.next/static
 
 USER node
 
