@@ -252,9 +252,25 @@ export async function run(): Promise<StepResult> {
         const doneMarker = path.join(carpetaPath, `${pdfFile}.done`);
 
         // Idempotencia por PDF: ya fue procesado o descartado explícitamente
-        if (fs.existsSync(skipMarker) || fs.existsSync(doneMarker)) {
+        if (fs.existsSync(skipMarker)) {
           result.saltados++;
           continue;
+        }
+        if (fs.existsSync(doneMarker)) {
+          // Si el .done existe pero el registro en BD fue borrado (ej. limpieza manual
+          // del dashboard), borrar el marcador para que el pipeline lo reprocese y
+          // genere la notificación correspondiente. Invariante: ningún PDF sin notificación.
+          const ocFromDone = fs.readFileSync(doneMarker, "utf8").trim();
+          const existeEnDb = ocFromDone
+            ? db.prepare("SELECT 1 FROM pedidos_maestro WHERE orden_compra = ?").get(ocFromDone)
+            : true;
+          if (!existeEnDb) {
+            fs.rmSync(doneMarker, { force: true });
+            result.detalles.push(`↩ ${carpeta}/${carpetaNombre}/${pdfFile}: reprocesando (registro DB eliminado)`);
+          } else {
+            result.saltados++;
+            continue;
+          }
         }
 
         const retriesPath = path.join(carpetaPath, `${pdfFile}.retries`);
