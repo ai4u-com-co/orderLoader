@@ -20,7 +20,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Compilar Next.js (esto generará .next/standalone si lo configuramos en next.config.ts)
-RUN npm run build
+RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/app/.next/cache npm run build
 
 # Stage 2: Imagen de producción mínima
 FROM node:20-alpine AS runner
