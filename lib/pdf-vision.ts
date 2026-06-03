@@ -39,7 +39,7 @@ export async function pdfToImages(pdfBuffer: Buffer, dpi = 150): Promise<PdfVisi
       "-png",
       tmpPdf,
       outPrefix,
-    ]);
+    ], { timeout: 60_000 });
 
     const pages = fs.readdirSync(tmpDir)
       .filter(f => f.endsWith(".png"))

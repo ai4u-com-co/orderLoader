@@ -118,9 +118,10 @@ export async function run(): Promise<StepResult> {
 
     // ── Verificación de idempotencia: ¿ya fue subida a SAP en un run anterior? ─
     try {
+      const safeCardCode = String(aiData.CardCode ?? "").replace(/'/g, "''")
       const check = await sap.get<{ value: Array<Record<string, unknown>> }>(
         "Orders",
-        { "$filter": `NumAtCard eq '${oc}' and CardCode eq '${aiData.CardCode}'`, "$select": "DocEntry,DocNum" }
+        { "$filter": `NumAtCard eq '${oc}' and CardCode eq '${safeCardCode}'`, "$select": "DocEntry,DocNum" }
       );
       if (check.value?.length > 0) {
         const existing = check.value[0];

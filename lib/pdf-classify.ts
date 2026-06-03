@@ -121,8 +121,14 @@ export function loadClientListsFromDb(db: import("better-sqlite3").Database): {
     ).all() as Array<{ carpeta: string; nombre: string; nits_json: string; keywords_json: string }>;
     if (rows.length === 0) return { nits: CLIENT_NITS, keywords: CLIENT_TEXT_KEYWORDS };
     return {
-      nits:     rows.map(r => ({ carpeta: r.carpeta, nombre: r.nombre, nits: JSON.parse(r.nits_json) as string[] })),
-      keywords: rows.map(r => ({ carpeta: r.carpeta, keywords: JSON.parse(r.keywords_json) as string[] })),
+      nits: rows.map(r => {
+        try { return { carpeta: r.carpeta, nombre: r.nombre, nits: JSON.parse(r.nits_json) as string[] } }
+        catch { console.warn(`pdf-classify: nits_json inválido para cliente ${r.carpeta}`); return { carpeta: r.carpeta, nombre: r.nombre, nits: [] } }
+      }),
+      keywords: rows.map(r => {
+        try { return { carpeta: r.carpeta, keywords: JSON.parse(r.keywords_json) as string[] } }
+        catch { console.warn(`pdf-classify: keywords_json inválido para cliente ${r.carpeta}`); return { carpeta: r.carpeta, keywords: [] } }
+      }),
     };
   } catch {
     return { nits: CLIENT_NITS, keywords: CLIENT_TEXT_KEYWORDS };
