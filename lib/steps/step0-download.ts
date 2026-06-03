@@ -197,9 +197,30 @@ async function recoverPendingMovesMicrosoft(
   return logs;
 }
 
-async function moveToSandra(imapClient: ImapFlow, uid: number, sandraFolder: string): Promise<void> {
+function registerManualReviewInDb(
+  db: ReturnType<typeof getDb>,
+  carpetaPath: string,
+  folderName: string,
+  sender: string,
+  subject: string,
+  errorMsg: string
+): string {
+  const now = new Date().toISOString();
+  const cleanSubject = folderName.slice(0, 40);
+  const pseudoOc = `MAIL_${cleanSubject}`;
+  
+  db.prepare(`
+    INSERT OR REPLACE INTO pedidos_maestro
+      (nit_cliente, orden_compra, fecha_recepcion, cliente_nombre, subtotal, estado, fase_actual, carpeta_origen, error_msg, notificacion_enviada)
+    VALUES ('0', ?, ?, ?, 0, 'ERROR_REVISION_MANUAL', 0, ?, ?, 0)
+  `).run(pseudoOc, now, sender || "Remitente Desconocido", carpetaPath, errorMsg.slice(0, 250));
+  
+  return pseudoOc;
+}
+
+async function moveToManualReview(imapClient: ImapFlow, uid: number, manualReviewFolder: string): Promise<void> {
   try {
-    await imapClient.messageMove(String(uid), sandraFolder, { uid: true });
+    await imapClient.messageMove(String(uid), manualReviewFolder, { uid: true });
   } catch {
     try { await imapClient.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
   }
@@ -345,7 +366,7 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
 
     const token = await getAccessToken(config.msTenantId, config.msClientId, config.msClientSecret);
     const stagingFolderId = await getOrCreateInboxChildFolder(token, config.emailUser, config.stagingFolderName);
-    const sandraFolderId  = await getOrCreateInboxChildFolder(token, config.emailUser, config.manualReviewFolderName);
+    const manualReviewFolderId  = await getOrCreateInboxChildFolder(token, config.emailUser, config.manualReviewFolderName);
 
     // El INBOX es la fuente de verdad: se procesa TODO lo que esté en la bandeja,
     // sin importar isRead. Los clientes reprocesan moviendo el correo de vuelta al
@@ -392,10 +413,68 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
         }
 
         if (pdfAttachments.length === 0) {
-          await graphMove(token, config.emailUser, msg.id, sandraFolderId);
-          result.saltados++;
-          result.detalles.push(`SANDRA (sin PDF): "${subject}" de ${sender}`);
-          continue;
+          const client_folder = "Otros";
+          const ts = new Date().toISOString().replace(/[-:T]/g, c => c === "T" ? "_" : c).split(".")[0];
+          let folderName = `${ts}_${clean(subject).slice(0, 50) || "sin_asunto"}`;
+          let idx = 1;
+          while (createdFolders.has(folderName)) {
+            folderName = `${ts}_${clean(subject).slice(0, 50)}_${String(idx).padStart(2, "0")}`;
+            idx++;
+          }
+          createdFolders.add(folderName);
+          const pedidoPath = path.join(config.pedidosRawDir, client_folder, folderName);
+          fs.mkdirSync(pedidoPath, { recursive: true });
+
+          const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
+          fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
+          for (const att of otherAttachments) {
+            fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+          }
+
+          const errorMsg = "El correo no contiene archivos PDF adjuntos.";
+          let pendingMoveId: number | null = null;
+          try {
+            const db = getDb();
+            registerManualReviewInDb(db, pedidoPath, folderName, sender, subject, errorMsg);
+            pendingMoveId = insertPendingMove(db, internetMsgId, 0, "Inbox", manualReviewFolderId, pedidoPath);
+          } catch { /* DB no disponible */ }
+
+          const metadataBase = {
+            from: sender, subject, date: dateHeader, client: client_folder,
+            folder_local: `pedidos/raw/${client_folder}/${folderName}`,
+            imap_uid: null, imap_staging_folder: null, imap_move_complete: false,
+            message_id: internetMsgId, graph_message_id: msg.id, graph_staging_folder_id: manualReviewFolderId,
+            graph_move_complete: false, n_adjuntos_pdf: 0, has_extra_files: false,
+            ts_download: new Date().toISOString(),
+          };
+          fs.writeFileSync(path.join(pedidoPath, "correo_metadata.json"), JSON.stringify(metadataBase, null, 2), "utf8");
+          fs.writeFileSync(path.join(pedidoPath, "estado_pipeline.json"), JSON.stringify({ fase: 0, estado: "DESCARGADO", ts: new Date().toISOString() }, null, 2), "utf8");
+
+          let newGraphMessageId = msg.id;
+          let graphMoveOk = false;
+          try {
+            const moved = await graphMove(token, config.emailUser, msg.id, manualReviewFolderId);
+            newGraphMessageId = moved.id;
+            graphMoveOk = true;
+          } catch {
+            try { await markAsRead(token, config.emailUser, msg.id); } catch { /* ignorar */ }
+          }
+
+          fs.writeFileSync(
+            path.join(pedidoPath, "correo_metadata.json"),
+            JSON.stringify({ ...metadataBase, graph_message_id: newGraphMessageId, graph_move_complete: graphMoveOk, imap_move_complete: graphMoveOk }, null, 2),
+            "utf8"
+          );
+
+          try {
+            const db = getDb();
+            logPipeline(db, folderName, 0, "download", "WARN", `Revisión Manual: Correo sin PDF. Movido a carpeta de revisión manual.`);
+            if (pendingMoveId !== null && graphMoveOk) completePendingMove(db, pendingMoveId);
+          } catch { /* ignore */ }
+
+          result.procesados++;
+          result.detalles.push(`OK (derivado a revisión manual): pedidos/raw/${client_folder}/${folderName}`);
+          break; // procesa uno a la vez
         }
 
         const pdfTexts    = new Map<string, string>();
@@ -424,10 +503,71 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
 
         const approvedPdfs = finalClasificados.filter(p => p.isApprovedOC);
         if (approvedPdfs.length === 0) {
-          await graphMove(token, config.emailUser, msg.id, sandraFolderId);
-          result.saltados++;
-          result.detalles.push(`SANDRA (ningún PDF es OC aprobada): "${subject}" de ${sender}`);
-          continue;
+          const client_folder = "Otros";
+          const ts = new Date().toISOString().replace(/[-:T]/g, c => c === "T" ? "_" : c).split(".")[0];
+          let folderName = `${ts}_${clean(subject).slice(0, 50) || "sin_asunto"}`;
+          let idx = 1;
+          while (createdFolders.has(folderName)) {
+            folderName = `${ts}_${clean(subject).slice(0, 50)}_${String(idx).padStart(2, "0")}`;
+            idx++;
+          }
+          createdFolders.add(folderName);
+          const pedidoPath = path.join(config.pedidosRawDir, client_folder, folderName);
+          fs.mkdirSync(pedidoPath, { recursive: true });
+
+          const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
+          fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
+          for (const att of [...pdfAttachments, ...otherAttachments]) {
+            fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+            if (att.filename.toLowerCase().endsWith(".pdf")) {
+              fs.writeFileSync(path.join(pedidoPath, `${att.filename}.skip`), "manual-review");
+            }
+          }
+
+          const errorMsg = "Ningún PDF corresponde a una orden de compra aprobada para este tenant.";
+          let pendingMoveId: number | null = null;
+          try {
+            const db = getDb();
+            registerManualReviewInDb(db, pedidoPath, folderName, sender, subject, errorMsg);
+            pendingMoveId = insertPendingMove(db, internetMsgId, 0, "Inbox", manualReviewFolderId, pedidoPath);
+          } catch { /* DB no disponible */ }
+
+          const metadataBase = {
+            from: sender, subject, date: dateHeader, client: client_folder,
+            folder_local: `pedidos/raw/${client_folder}/${folderName}`,
+            imap_uid: null, imap_staging_folder: null, imap_move_complete: false,
+            message_id: internetMsgId, graph_message_id: msg.id, graph_staging_folder_id: manualReviewFolderId,
+            graph_move_complete: false, n_adjuntos_pdf: pdfAttachments.length, has_extra_files: false,
+            ts_download: new Date().toISOString(),
+          };
+          fs.writeFileSync(path.join(pedidoPath, "correo_metadata.json"), JSON.stringify(metadataBase, null, 2), "utf8");
+          fs.writeFileSync(path.join(pedidoPath, "estado_pipeline.json"), JSON.stringify({ fase: 0, estado: "DESCARGADO", ts: new Date().toISOString() }, null, 2), "utf8");
+
+          let newGraphMessageId = msg.id;
+          let graphMoveOk = false;
+          try {
+            const moved = await graphMove(token, config.emailUser, msg.id, manualReviewFolderId);
+            newGraphMessageId = moved.id;
+            graphMoveOk = true;
+          } catch {
+            try { await markAsRead(token, config.emailUser, msg.id); } catch { /* ignorar */ }
+          }
+
+          fs.writeFileSync(
+            path.join(pedidoPath, "correo_metadata.json"),
+            JSON.stringify({ ...metadataBase, graph_message_id: newGraphMessageId, graph_move_complete: graphMoveOk, imap_move_complete: graphMoveOk }, null, 2),
+            "utf8"
+          );
+
+          try {
+            const db = getDb();
+            logPipeline(db, folderName, 0, "download", "WARN", `Revisión Manual: PDFs no aprobados. Movido a carpeta de revisión manual.`);
+            if (pendingMoveId !== null && graphMoveOk) completePendingMove(db, pendingMoveId);
+          } catch { /* ignore */ }
+
+          result.procesados++;
+          result.detalles.push(`OK (derivado a revisión manual): pedidos/raw/${client_folder}/${folderName}`);
+          break;
         }
 
         const nonSignatureOthers = otherAttachments.filter(att => {
@@ -573,9 +713,9 @@ export async function run(): Promise<StepResult> {
 
   try {
     await imapClient.connect();
-    const imapSandraFolder  = `INBOX.${config.manualReviewFolderName}`;
+    const imapManualReviewFolder  = `INBOX.${config.manualReviewFolderName}`;
     const imapStagingFolder = `INBOX.${config.stagingFolderName}`;
-    await imapClient.mailboxCreate(imapSandraFolder).catch(() => {});
+    await imapClient.mailboxCreate(imapManualReviewFolder).catch(() => {});
     await imapClient.mailboxCreate(imapStagingFolder).catch(() => {});
 
     const lock = await imapClient.getMailboxLock("INBOX");
@@ -636,12 +776,74 @@ export async function run(): Promise<StepResult> {
             }
           }
 
-          // ── 3. Sin PDFs → Sandra ───────────────────────────────────────────────
+          // ── 3. Sin PDFs → Revisión Manual ───────────────────────────────────────
           if (pdfAttachments.length === 0) {
-            await moveToSandra(imapClient, msg.uid, imapSandraFolder);
-            result.saltados++;
-            result.detalles.push(`SANDRA (sin PDF): "${subject}" de ${sender}`);
-            continue;
+            const client_folder = "Otros";
+            const ts = new Date().toISOString().replace(/[-:T]/g, c => c === "T" ? "_" : c).split(".")[0];
+            let folderName = `${ts}_${clean(subject).slice(0, 50) || "sin_asunto"}`;
+            let idx = 1;
+            while (createdFolders.has(folderName)) {
+              folderName = `${ts}_${clean(subject).slice(0, 50)}_${String(idx).padStart(2, "0")}`;
+              idx++;
+            }
+            createdFolders.add(folderName);
+            const pedidoPath = path.join(config.pedidosRawDir, client_folder, folderName);
+            fs.mkdirSync(pedidoPath, { recursive: true });
+
+            if (msg.source) {
+              fs.writeFileSync(path.join(pedidoPath, "correo_original.eml"), msg.source);
+            }
+            const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
+            fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
+            for (const att of otherAttachments) {
+              fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+            }
+
+            const errorMsg = "El correo no contiene archivos PDF adjuntos.";
+            let pendingMoveId: number | null = null;
+            try {
+              const db = getDb();
+              registerManualReviewInDb(db, pedidoPath, folderName, sender, subject, errorMsg);
+              pendingMoveId = insertPendingMove(db, messageId, msg.uid, "INBOX", imapManualReviewFolder, pedidoPath);
+            } catch { /* DB no disponible */ }
+
+            const metadataBase = {
+              from: sender, subject, date: dateHeader, client: client_folder,
+              folder_local: `pedidos/raw/${client_folder}/${folderName}`,
+              imap_uid: msg.uid, message_id: messageId, imap_staging_folder: imapManualReviewFolder,
+              n_adjuntos_pdf: 0, has_extra_files: false, ts_download: new Date().toISOString(),
+              imap_move_complete: false,
+            };
+            fs.writeFileSync(path.join(pedidoPath, "correo_metadata.json"), JSON.stringify(metadataBase, null, 2), "utf8");
+            fs.writeFileSync(path.join(pedidoPath, "estado_pipeline.json"), JSON.stringify({ fase: 0, estado: "DESCARGADO", ts: new Date().toISOString() }, null, 2), "utf8");
+
+            let storedUid = msg.uid;
+            let imapMoveOk = false;
+            try {
+              const moveResult = await moveToManualReview(imapClient, msg.uid, imapManualReviewFolder);
+              // ImapFlow messageMove returns move info
+              const newUid = (moveResult as any)?.uidMap?.get(msg.uid);
+              if (newUid) storedUid = newUid;
+              imapMoveOk = true;
+            } catch {
+              try { await imapClient.messageFlagsAdd(String(msg.uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
+            }
+
+            fs.writeFileSync(
+              path.join(pedidoPath, "correo_metadata.json"),
+              JSON.stringify({ ...metadataBase, imap_uid: storedUid, imap_move_complete: imapMoveOk, graph_move_complete: imapMoveOk }, null, 2),
+              "utf8"
+            );
+
+            try {
+              const db = getDb();
+              logPipeline(db, folderName, 0, "download", "WARN", `Revisión Manual: Correo sin PDF. Movido a carpeta de revisión manual.`);
+              if (pendingMoveId !== null && imapMoveOk) completePendingMove(db, pendingMoveId);
+            } catch { /* ignore */ }
+
+            result.procesados++;
+            result.detalles.push(`OK (derivado a revisión manual): pedidos/raw/${client_folder}/${folderName}`);
+            break;
           }
 
           // ── 4. Clasificar cada PDF por su contenido interno ───────────────────
@@ -658,8 +860,6 @@ export async function run(): Promise<StepResult> {
             if (!ia) return pdf;
 
             // NIT match: la IA puede ELEVAR isApprovedOC si isTamaprint fue false
-            // (ej. PDF escaneado o que no menciona "Tamaprint" explícitamente en el texto).
-            // La IA no puede revocar un NIT confirmado.
             if (pdf.detectionMethod === 'nit') {
               if (!pdf.isApprovedOC && ia.tipo === 'orden_compra') {
                 return { ...pdf, isApprovedOC: true };
@@ -672,7 +872,6 @@ export async function run(): Promise<StepResult> {
               if (ia.tipo !== 'orden_compra') {
                 return { ...pdf, isApprovedOC: false };
               }
-              // Si la IA identifica un cliente diferente, usar el de la IA si existe en lista aprobada
               if (ia.cliente && ia.cliente !== pdf.client) {
                 return { ...pdf, client: ia.cliente, isApprovedOC: pdf.isDirigidoAEmpresa };
               }
@@ -692,10 +891,74 @@ export async function run(): Promise<StepResult> {
           const approvedPdfs = finalClasificados.filter(p => p.isApprovedOC);
 
           if (approvedPdfs.length === 0) {
-            await moveToSandra(imapClient, msg.uid, imapSandraFolder);
-            result.saltados++;
-            result.detalles.push(`SANDRA (ningún PDF es OC aprobada): "${subject}" de ${sender}`);
-            continue;
+            const client_folder = "Otros";
+            const ts = new Date().toISOString().replace(/[-:T]/g, c => c === "T" ? "_" : c).split(".")[0];
+            let folderName = `${ts}_${clean(subject).slice(0, 50) || "sin_asunto"}`;
+            let idx = 1;
+            while (createdFolders.has(folderName)) {
+              folderName = `${ts}_${clean(subject).slice(0, 50)}_${String(idx).padStart(2, "0")}`;
+              idx++;
+            }
+            createdFolders.add(folderName);
+            const pedidoPath = path.join(config.pedidosRawDir, client_folder, folderName);
+            fs.mkdirSync(pedidoPath, { recursive: true });
+
+            if (msg.source) {
+              fs.writeFileSync(path.join(pedidoPath, "correo_original.eml"), msg.source);
+            }
+            const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
+            fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
+            for (const att of [...pdfAttachments, ...otherAttachments]) {
+              fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+              if (att.filename.toLowerCase().endsWith(".pdf")) {
+                fs.writeFileSync(path.join(pedidoPath, `${att.filename}.skip`), "manual-review");
+              }
+            }
+
+            const errorMsg = "Ningún PDF corresponde a una orden de compra aprobada para este tenant.";
+            let pendingMoveId: number | null = null;
+            try {
+              const db = getDb();
+              registerManualReviewInDb(db, pedidoPath, folderName, sender, subject, errorMsg);
+              pendingMoveId = insertPendingMove(db, messageId, msg.uid, "INBOX", imapManualReviewFolder, pedidoPath);
+            } catch { /* DB no disponible */ }
+
+            const metadataBase = {
+              from: sender, subject, date: dateHeader, client: client_folder,
+              folder_local: `pedidos/raw/${client_folder}/${folderName}`,
+              imap_uid: msg.uid, message_id: messageId, imap_staging_folder: imapManualReviewFolder,
+              n_adjuntos_pdf: pdfAttachments.length, has_extra_files: false, ts_download: new Date().toISOString(),
+              imap_move_complete: false,
+            };
+            fs.writeFileSync(path.join(pedidoPath, "correo_metadata.json"), JSON.stringify(metadataBase, null, 2), "utf8");
+            fs.writeFileSync(path.join(pedidoPath, "estado_pipeline.json"), JSON.stringify({ fase: 0, estado: "DESCARGADO", ts: new Date().toISOString() }, null, 2), "utf8");
+
+            let storedUid = msg.uid;
+            let imapMoveOk = false;
+            try {
+              const moveResult = await moveToManualReview(imapClient, msg.uid, imapManualReviewFolder);
+              const newUid = (moveResult as any)?.uidMap?.get(msg.uid);
+              if (newUid) storedUid = newUid;
+              imapMoveOk = true;
+            } catch {
+              try { await imapClient.messageFlagsAdd(String(msg.uid), ["\\Seen"], { uid: true }); } catch { /* ignorar */ }
+            }
+
+            fs.writeFileSync(
+              path.join(pedidoPath, "correo_metadata.json"),
+              JSON.stringify({ ...metadataBase, imap_uid: storedUid, imap_move_complete: imapMoveOk, graph_move_complete: imapMoveOk }, null, 2),
+              "utf8"
+            );
+
+            try {
+              const db = getDb();
+              logPipeline(db, folderName, 0, "download", "WARN", `Revisión Manual: PDFs no aprobados. Movido a carpeta de revisión manual.`);
+              if (pendingMoveId !== null && imapMoveOk) completePendingMove(db, pendingMoveId);
+            } catch { /* ignore */ }
+
+            result.procesados++;
+            result.detalles.push(`OK (derivado a revisión manual): pedidos/raw/${client_folder}/${folderName}`);
+            break;
           }
 
           // ── 6. Determinar si hay "extras" (excluir firmas/logos identificados por IA) ──

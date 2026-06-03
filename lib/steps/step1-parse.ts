@@ -157,33 +157,7 @@ function insertSapOrder(
 
 // esDirigidoAEmpresa y detectClientFromPdf importados desde lib/pdf-classify.ts
 
-async function notificarPDFNoEmpresa(
-  cliente: string,
-  carpeta: string,
-  pdfNombre: string,
-): Promise<void> {
-  const empresa = getConfig().tenantDisplayName;
-  const fecha = new Date().toLocaleString("es-CO", { timeZone: "America/Bogota" });
-  await sendAlertEmail(
-    `[OrderLoader] ⚠ PDF no dirigido a ${empresa} — ${cliente}/${carpeta}`,
-    `<html><body style="font-family:Arial,sans-serif;font-size:13px">
-      <h3 style="color:#856404;background:#fff3cd;padding:10px;border-radius:4px">
-        ⚠ PDF recibido no está dirigido a ${empresa}
-      </h3>
-      <table style="border-collapse:collapse">
-        <tr><td style="padding:4px 12px 4px 0"><b>Cliente:</b></td><td>${cliente}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0"><b>Carpeta:</b></td><td>${carpeta}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0"><b>Archivo:</b></td><td>${pdfNombre}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0"><b>Fecha:</b></td><td>${fecha}</td></tr>
-      </table>
-      <p style="margin-top:16px">
-        El PDF fue recibido pero <b>no contiene el NIT ni el nombre de ${empresa}</b> como proveedor.<br>
-        Verificar manualmente si corresponde a otro proveedor.
-      </p>
-      <p style="color:#888;font-size:11px;margin-top:16px">Generado automáticamente por OrderLoader Pipeline</p>
-    </body></html>`,
-  );
-}
+
 
 /**
  * Cuando un PDF alcanza el límite de retries, crea un registro de error en la DB
@@ -300,41 +274,28 @@ export async function run(): Promise<StepResult> {
           const pdfText = parsed.text ?? '';
           const textIsEmpty = pdfText.trim().length < 50;
 
-          // PDF no dirigido a la empresa receptora → alerta solo si hay texto extraíble.
-          // Si el texto está vacío (PDF con fuentes vectoriales), confiar en la
-          // carpeta asignada por step0 que ya validó el correo.
-          if (!textIsEmpty && !esDirigidoAEmpresa(pdfText, config.receptorKeywords)) {
-            result.saltados++;
-            result.detalles.push(`  → No dirigido a ${config.tenant} — omitido`);
-            logPipeline(db, carpetaNombre, 1, "parse", "OK", `${pdfFile}: no dirigido a ${config.tenant}`);
-            fs.writeFileSync(skipMarker, "");
-            await notificarPDFNoEmpresa(carpeta, carpetaNombre, pdfFile).catch(() => {});
-            continue;
-          }
-
           // ── Detectar cliente desde el PDF; si texto vacío usar carpeta del correo ──
           const detectedCarpeta = !textIsEmpty
             ? detectClientFromPdf(pdfText, clientNits, clientKeywords)?.carpeta ?? null
             : carpeta;
           const clienteInfo = CLIENTES.find(c => c.carpeta === (detectedCarpeta ?? carpeta));
 
+          // PDF no dirigido a la empresa receptora → registrar ERROR_PARSE y continuar.
+          if (!textIsEmpty && !esDirigidoAEmpresa(pdfText, config.receptorKeywords)) {
+            result.errores++;
+            result.detalles.push(`  → No dirigido a ${config.tenant} — omitido`);
+            logPipeline(db, carpetaNombre, 1, "parse", "ERROR", `${pdfFile}: no dirigido a ${config.tenant}`);
+            fs.writeFileSync(skipMarker, "");
+            registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, clienteInfo?.nombre ?? carpeta, `El PDF recibido no está dirigido a la empresa receptora (${config.tenantDisplayName}).`);
+            continue;
+          }
+
           if (!clienteInfo) {
-            result.saltados++;
+            result.errores++;
             result.detalles.push(`  ⚠ No se identificó cliente en el PDF — omitido (carpeta email: ${carpeta})`);
-            logPipeline(db, carpetaNombre, 1, "parse", "WARN", `${pdfFile}: cliente no detectado en PDF`);
+            logPipeline(db, carpetaNombre, 1, "parse", "ERROR", `${pdfFile}: cliente no detectado en PDF`);
             fs.writeFileSync(skipMarker, "no-client-detected");
-            await sendAlertEmail(
-              `[OrderLoader] ⚠ Cliente no identificado en PDF — ${carpeta}/${carpetaNombre}`,
-              `<html><body style="font-family:Arial,sans-serif;font-size:13px">
-                <h3 style="color:#856404;background:#fff3cd;padding:10px;border-radius:4px">
-                  ⚠ No se pudo identificar el cliente desde el PDF
-                </h3>
-                <p>El PDF <b>${pdfFile}</b> está dirigido a ${config.tenantDisplayName} pero no contiene
-                el NIT ni keywords de ningún cliente registrado.</p>
-                <p><b>Carpeta:</b> ${carpeta}/${carpetaNombre}</p>
-                <p>Verificar manualmente si corresponde a un cliente nuevo.</p>
-              </body></html>`
-            ).catch(() => {});
+            registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, carpeta, `No se pudo identificar a qué cliente aprobado corresponde el PDF.`);
             continue;
           }
 
@@ -355,10 +316,6 @@ export async function run(): Promise<StepResult> {
               fs.writeFileSync(errorPath, status);
               fs.rmSync(retriesPath, { force: true });
               registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, clienteInfo?.nombre ?? carpeta, status);
-              await sendAlertEmail(
-                `[ERROR OrderLoader] PDF ${pdfFile} — fallo de parseo repetido`,
-                `<p>El archivo <b>${pdfFile}</b> falló ${retries} veces. Último error:</p><pre>${status}</pre>`
-              ).catch(() => {});
             } else {
               fs.writeFileSync(retriesPath, String(retries));
             }
@@ -409,13 +366,9 @@ export async function run(): Promise<StepResult> {
             fs.writeFileSync(errorPath, String(e));
             fs.rmSync(retriesPath, { force: true });
             registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, carpeta, String(e));
-            await sendAlertEmail(
-              `[ERROR OrderLoader] PDF ${pdfFile} — fallo repetido`,
-              `<p>El archivo <b>${pdfFile}</b> falló ${retries} veces. Último error:</p><pre>${String(e)}</pre>`
-            ).catch(() => {});
-          } else {
-            fs.writeFileSync(retriesPath, String(retries));
-          }
+            } else {
+              fs.writeFileSync(retriesPath, String(retries));
+            }
         }
       }
     }

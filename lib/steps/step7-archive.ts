@@ -38,7 +38,6 @@ export interface StepResult {
 const SOURCE_FOLDER = "INBOX.A A REVISAR IA";  // fallback: step0 guarda imap_staging_folder en metadata
 const DEST_OK       = "INBOX.A B INGRESADO";   // destino para pedidos limpios (mover desde REVISAR IA)
 const DEST_REVISAR  = "INBOX.A A REVISAR IA";
-const DEST_SANDRA   = "INBOX.A A SANDRA";
 
 function isLimpio(row: Record<string, unknown>): boolean {
   if (row.error_msg) return false;
@@ -193,8 +192,9 @@ async function moveInImap(
       await imap.connect();
       const lock = await imap.getMailboxLock(srcFolder);
       try {
+        const destSandraFolder = `INBOX.${config.manualReviewFolderName}`;
         try { await imap.mailboxCreate(DEST_REVISAR); } catch { /* ya existe */ }
-        try { await imap.mailboxCreate(DEST_SANDRA); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(destSandraFolder); } catch { /* ya existe */ }
 
         // ── Construir mapa: messageId → UIDs actuales en la carpeta fuente ──
         // Usa el envelope IMAP que incluye messageId directamente.
@@ -250,6 +250,9 @@ export async function run(): Promise<StepResult> {
     "SELECT * FROM pedidos_maestro WHERE estado = 'NOTIFICADO'"
   ).all() as Array<Record<string, unknown>>;
 
+  const destSandraFolder = `INBOX.${config.manualReviewFolderName}`;
+  const destSandraName = config.manualReviewFolderName;
+
   const destByOrden: Record<string, string> = {};
   const moveJobs: MoveJob[] = [];
 
@@ -265,11 +268,11 @@ export async function run(): Promise<StepResult> {
       const graphMessageId = isGraph ? String(meta.graph_message_id) : undefined;
       const src            = meta.imap_staging_folder ?? SOURCE_FOLDER;
       const destImap       = isLimpio(row)
-        ? (meta.has_extra_files === true ? DEST_SANDRA : DEST_OK)
+        ? (meta.has_extra_files === true ? destSandraFolder : DEST_OK)
         : DEST_REVISAR;
       // Para Graph, solo los nombres "cortos" sin prefijo INBOX.
       const destName       = isLimpio(row)
-        ? (meta.has_extra_files === true ? "A A SANDRA" : "A B INGRESADO")
+        ? (meta.has_extra_files === true ? destSandraName : "A B INGRESADO")
         : "A A REVISAR IA";
       moveJobs.push({ uid, messageId, source: src, dest: destImap, graphMessageId, graphDestFolderName: destName });
       destByOrden[String(row.orden_compra)] = destImap;
@@ -278,8 +281,8 @@ export async function run(): Promise<StepResult> {
 
   // Deduplicar por messageId: varios pedidos pueden venir del mismo correo.
   // Si un correo tiene múltiples OCs, se mueve UNA sola vez al destino más restrictivo
-  // (REVISAR_IA > SANDRA > INGRESADO) para no intentar mover el mismo UID dos veces.
-  const DEST_PRIORITY: Record<string, number> = { [DEST_REVISAR]: 2, [DEST_SANDRA]: 1, [DEST_OK]: 0 };
+  // (REVISAR_IA > REVISION_MANUAL > INGRESADO) para no intentar mover el mismo UID dos veces.
+  const DEST_PRIORITY: Record<string, number> = { [DEST_REVISAR]: 2, [destSandraFolder]: 1, [DEST_OK]: 0 };
   const byMessageId = new Map<string, MoveJob>();
   for (const job of moveJobs) {
     const key = job.messageId ?? `uid:${job.uid}`;
@@ -327,8 +330,8 @@ export async function run(): Promise<StepResult> {
         const row = cerradoMap.get(oc);
         if (!row) continue;
         for (const { uid, messageId, hasExtraFiles, source, graphMessageId } of entries) {
-          const dest     = isLimpio(row) ? (hasExtraFiles ? DEST_SANDRA : DEST_OK) : DEST_REVISAR;
-          const destName = isLimpio(row) ? (hasExtraFiles ? "A A SANDRA" : "A B INGRESADO") : "A A REVISAR IA";
+          const dest     = isLimpio(row) ? (hasExtraFiles ? destSandraFolder : DEST_OK) : DEST_REVISAR;
+          const destName = isLimpio(row) ? (hasExtraFiles ? destSandraName : "A B INGRESADO") : "A A REVISAR IA";
           orphanJobsRaw.push({ uid, messageId, source, dest, graphMessageId, graphDestFolderName: destName });
         }
       }

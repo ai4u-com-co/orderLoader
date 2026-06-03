@@ -72,6 +72,9 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
       errores.push(`${ref}: SupplierCatNum vacío`);
     } else {
       vistos.add(line.SupplierCatNum);
+      if (line.SupplierCatNum.startsWith("0") && ["Hermeco", "Comodin"].includes(_clienteNombre)) {
+        errores.push(`${ref} (${line.SupplierCatNum}): SupplierCatNum no puede tener cero inicial para el cliente ${_clienteNombre}`);
+      }
     }
 
     // Quantity: entero positivo
@@ -172,7 +175,6 @@ export async function run(): Promise<StepResult> {
       logPipeline(db, oc, 2, "validate", "ERROR", erroresFormato[0].slice(0, 1000));
       result.errores++;
       result.detalles.push(`✗ OC ${oc} → ERROR_PARSE: ${erroresFormato[0]}`);
-      try { await sendAlertEmail(`[ERROR OrderLoader] OC ${oc} — Validación fallida`, buildErrorHtml(oc, cliente, erroresFormato)); } catch { /* ignore */ }
       continue;
     }
 

@@ -17,6 +17,7 @@ const STATUS_MAP: Record<string, { label: string; variant: BadgeProps["variant"]
   ERROR_ITEMS:      { label: "Error Ítems",      variant: "danger"   },
   ERROR_SAP:        { label: "Error SAP",        variant: "danger"   },
   ERROR_VALIDACION: { label: "Error Validación", variant: "danger"   },
+  ERROR_REVISION_MANUAL: { label: "Revisión Manual", variant: "accent" },
 };
 
 export default function PipelineStatus({ estado }: { estado: string }) {

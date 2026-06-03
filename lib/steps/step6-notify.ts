@@ -31,6 +31,7 @@ export interface StepResult {
 const ESTADOS_A_NOTIFICAR = [
   "VALIDADO", "SAP_MONTADO",
   "ERROR_DUPLICADO", "ERROR_ITEMS", "ERROR_SAP", "ERROR_PARSE", "ERROR_VALIDACION", "ERROR_CATALOG",
+  "ERROR_REVISION_MANUAL",
   "NOTIFICANDO",
 ] as const;
 
@@ -134,7 +135,7 @@ export async function run(): Promise<StepResult> {
   <tr>
     <td style="background:#fff7ed;border:1px solid #ff6e00;border-radius:6px;padding:12px 16px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#c2410c">
       <b>⚠ Este correo contiene más PDFs</b><br>
-      <span style="color:#78350f;font-size:12px">Archivos no procesados: ${archivosExtra || "ver correo original en A A SANDRA"}</span>
+      <span style="color:#78350f;font-size:12px">Archivos no procesados: ${archivosExtra || `ver correo original en ${config.manualReviewFolderName}`}</span>
     </td>
   </tr>
 </table>`;

@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { AI4U_PALETTE } from "@ai4u/design-system/tokens";
+import { getConfig } from "../config";
 
 // ─── Brand Tokens ─────────────────────────────────────────────────────────────
 const B = {
@@ -29,7 +30,7 @@ function statusColors(estado: string, esParcial: boolean) {
     return { bg: B.warnBg, text: B.warnText, border: B.warnBorder };
   if (estado === "VALIDADO" || estado === "SAP_MONTADO")
     return { bg: B.successBg, text: B.successText, border: B.successBorder };
-  if (estado === "ERROR_VALIDACION")
+  if (estado === "ERROR_VALIDACION" || estado === "ERROR_REVISION_MANUAL")
     return { bg: B.warnBg, text: B.warnText, border: B.warnBorder };
   return { bg: B.errorBg, text: B.errorText, border: B.errorBorder };
 }
@@ -50,6 +51,23 @@ function parseSapError(errorMsg: string): string {
     return `Error SAP (código ${code}) — pedido NO creado`;
   }
   return errorMsg.replace(/Error: SAP \w+ https?:\/\/\S+ → \d+:\s*/i, "").slice(0, 120);
+}
+
+function cleanErrorMessage(errorMsg: string): string {
+  if (!errorMsg) return "";
+  let clean = errorMsg;
+  if (clean.includes("Error de validación AI:")) {
+    clean = clean.replace("Error de validación AI:", "Fallo en extracción de datos (IA):");
+    clean = clean.replace(/Required/g, "Es requerido");
+    clean = clean.replace(/Invalid datetime/g, "Fecha inválida");
+    clean = clean.replace(/Expected number, received string/g, "Se esperaba un número");
+    clean = clean.replace(/DocumentLines\.(\d+)\.SupplierCatNum/g, (_, idx) => `Código SKU en la línea ${Number(idx) + 1}`);
+    clean = clean.replace(/DocumentLines\.(\d+)\.Quantity/g, (_, idx) => `Cantidad en la línea ${Number(idx) + 1}`);
+    clean = clean.replace(/DocumentLines\.(\d+)\.UnitPrice/g, (_, idx) => `Precio unitario en la línea ${Number(idx) + 1}`);
+    clean = clean.replace(/CardCode/g, "Código de Cliente (CardCode)");
+    clean = clean.replace(/NumAtCard/g, "Número de Orden de Compra");
+  }
+  return parseSapError(clean);
 }
 
 export function parseExcluidos(row: Record<string, unknown>): string[] {
@@ -76,8 +94,34 @@ function buildDetalle(row: Record<string, unknown>): string {
     } catch { /* ignore */ }
   }
 
-  if (row.error_msg) return parseSapError(String(row.error_msg));
+  if (estado === "ERROR_REVISION_MANUAL") {
+    return String(row.error_msg || "Derivado a revisión manual");
+  }
+
+  if (row.error_msg) return cleanErrorMessage(String(row.error_msg));
   return "";
+}
+
+function obtenerAccionRequerida(estado: string, errorMsg: string): string {
+  const config = getConfig();
+  switch (estado) {
+    case "ERROR_VALIDACION":
+      return "<b>Acción Requerida:</b> Existen discrepancias de precios o cantidades entre el PDF y SAP. Ingrese al Dashboard para autorizar la orden con las diferencias o solicitar corrección al cliente.";
+    case "ERROR_CATALOG":
+      return "<b>Acción Requerida:</b> Uno o más artículos no están homologados en el catálogo SAP de este socio de negocios. Ingrese a la sección 'Clientes' del Dashboard para registrar las equivalencias de SKU correspondiente.";
+    case "ERROR_DUPLICADO":
+      return "<b>Acción Requerida:</b> Este número de orden de compra ya existe en SAP. No se requiere acción si es un correo duplicado; si desea forzar una nueva carga, modifique el número de OC desde el Dashboard.";
+    case "ERROR_REVISION_MANUAL":
+      return `<b>Acción Requerida:</b> El correo no cumplió con los filtros automáticos (ej. no contiene PDFs adjuntos de pedidos). Fue movido a la carpeta de revisión manual (<b>${config.manualReviewFolderName}</b>) en el servidor de correo.`;
+    case "ERROR_SAP":
+      return `<b>Acción Requerida:</b> SAP rechazó el documento debido al siguiente error: <i>${parseSapError(errorMsg)}</i>. Verifique el estado del socio de negocio o del artículo en SAP B1.`;
+    case "ERROR_PARSE":
+      return "<b>Acción Requerida:</b> No se pudieron extraer los datos del PDF de manera estructurada. Verifique que el archivo no esté protegido por contraseña o que la calidad visual sea legible en el Dashboard.";
+    case "ERROR_ITEMS":
+      return "<b>Acción Requerida:</b> El documento no contiene líneas de artículos válidas para SAP. Revise el archivo PDF original en el Dashboard.";
+    default:
+      return "";
+  }
 }
 
 // ─── Section builders ─────────────────────────────────────────────────────────
@@ -91,6 +135,19 @@ function theadRow(...cols: string[]): string {
     `<th style="padding:8px 12px;text-align:left;font-family:${FONT};font-size:12px;font-weight:600;color:${B.white};letter-spacing:0.05em;white-space:nowrap">${c}</th>`
   ).join("");
   return `<thead><tr style="background:${B.erieBlack}">${cells}</tr></thead>`;
+}
+
+function buildCtaButton(url: string, text: string): string {
+  return `
+<table border="0" cellpadding="0" cellspacing="0" style="margin:20px 0 0 0;border-collapse:separate">
+  <tr>
+    <td align="center" valign="middle" style="background:${B.erieBlack};border-radius:8px;padding:12px 24px">
+      <a href="${url}" target="_blank" style="font-family:${FONT};font-size:13px;font-weight:700;color:${B.white};text-decoration:none;letter-spacing:0.05em;display:inline-block">
+        ${text}
+      </a>
+    </td>
+  </tr>
+</table>`;
 }
 
 function buildDiscrepanciasHtml(rows: Array<Record<string, unknown>>): string {
@@ -158,25 +215,17 @@ function buildDiscrepanciasHtml(rows: Array<Record<string, unknown>>): string {
 }
 
 function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unknown>>): string {
-  const relevantes = rows.filter(r =>
-    r.estado === "VALIDADO" || r.estado === "SAP_MONTADO" || r.estado === "ERROR_VALIDACION"
-  );
-  if (!relevantes.length) return "";
-
-  const fmtCOP = (v: number) =>
-    v > 0
-      ? v.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })
-      : `<span style="color:${B.errorText};font-weight:700">$0 ⚠</span>`;
-
-  const secciones = relevantes.map(row => {
+  const secciones = rows.map(row => {
     const excluidos = parseExcluidos(row);
     const todasLineas = db.prepare(
       "SELECT codigo_producto, descripcion, cantidad, precio_unitario, subtotal_item FROM pedidos_detalle WHERE orden_compra = ? ORDER BY id"
     ).all(row.orden_compra) as Array<{ codigo_producto: string; descripcion: string; cantidad: number; precio_unitario: number; subtotal_item: number }>;
+    
+    if (!todasLineas.length) return "";
+
     const lineas = excluidos.length
       ? todasLineas.filter(l => !excluidos.includes(l.codigo_producto))
       : todasLineas;
-    if (!lineas.length) return "";
 
     const preciosMalos = new Map<string, number>();
     try {
@@ -194,6 +243,11 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
       const icono      = tieneMalo ? "⚠" : "✓";
       const iconColor  = tieneMalo ? B.warnText : B.successText;
 
+      const fmtCOP = (v: number) =>
+        v > 0
+          ? v.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })
+          : `<span style="color:${B.errorText};font-weight:700">$0 ⚠</span>`;
+
       return `<tr style="background:${rowBg}">
         <td style="padding:6px 12px;font-family:monospace,${FONT};font-size:11px;color:${B.erieBlack}">${l.codigo_producto}</td>
         <td style="padding:6px 12px;font-family:${FONT};font-size:11px;color:${B.cadetGray}">${l.descripcion}</td>
@@ -205,7 +259,7 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
       </tr>`;
     }).join("");
 
-    const hasMalos     = preciosMalos.size > 0;
+    const hasMalos     = preciosMalos.size > 0 || String(row.estado).startsWith("ERROR");
     const headerBg     = hasMalos ? B.warnBg : B.successBg;
     const headerText   = hasMalos ? B.warnText : B.successText;
     const headerBorder = hasMalos ? B.warnBorder : B.successBorder;
@@ -216,7 +270,7 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
       <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${headerBorder};border-radius:8px;overflow:hidden">
         <thead>
           <tr>
-            <td colspan="6" style="background:${headerBg};padding:10px 12px;border-bottom:2px solid ${headerBorder}">
+            <td colspan="7" style="background:${headerBg};padding:10px 12px;border-bottom:2px solid ${headerBorder}">
               <span style="font-family:${FONT};font-size:13px;font-weight:700;color:${headerText}">${ocLabel}</span>
             </td>
           </tr>
@@ -225,7 +279,9 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
         <tbody>${filas}</tbody>
       </table>
     </td></tr>`;
-  }).join("");
+  }).join("\n");
+
+  if (!secciones.trim()) return "";
 
   return `<table width="100%" cellpadding="0" cellspacing="0">
     ${sectionTitle("Detalle de precios por línea")}
@@ -235,7 +291,7 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
 
 function buildExcluidosHtml(rows: Array<Record<string, unknown>>): string {
   const parciales = rows.filter(r =>
-    (r.estado === "SAP_MONTADO" || r.estado === "VALIDADO") && parseExcluidos(r).length > 0
+    parseExcluidos(r).length > 0
   );
   if (!parciales.length) return "";
 
@@ -277,25 +333,78 @@ function buildExcluidosHtml(rows: Array<Record<string, unknown>>): string {
 
 export function buildSubjectForOrder(row: Record<string, unknown>, hasExtraFiles = false, tenant = ""): string {
   const estado = String(row.estado);
-  const esParcial = (estado === "SAP_MONTADO" || estado === "VALIDADO") && parseExcluidos(row).length > 0;
-  const estadoLabel = esParcial ? `${estado} ⚠ PARCIAL` : estado;
+  const oc = String(row.orden_compra);
+  const isMailOnly = oc.startsWith("MAIL_");
+  const ocLabel = isMailOnly ? "Correo recibido" : `OC ${oc}`;
+
+  let estadoLabel = estado;
+  if (estado === "ERROR_REVISION_MANUAL") {
+    estadoLabel = "REVISIÓN MANUAL";
+  } else {
+    const esParcial = (estado === "SAP_MONTADO" || estado === "VALIDADO") && parseExcluidos(row).length > 0;
+    estadoLabel = esParcial ? `${estado} ⚠ PARCIAL` : estado;
+  }
+
   const extraSuffix = hasExtraFiles ? " | ⚠ Contiene más documentos" : "";
   const prefix = tenant ? `[OrderLoader/${tenant}]` : "[OrderLoader]";
-  return `${prefix} OC ${row.orden_compra} | ${row.cliente_nombre || "—"} | ${estadoLabel}${extraSuffix}`;
+  return `${prefix} ${ocLabel} | ${row.cliente_nombre || "—"} | ${estadoLabel}${extraSuffix}`;
 }
 
 export function buildHtmlForOrder(db: Database.Database, row: Record<string, unknown>, fecha: string): string {
   const estado    = String(row.estado);
   const esParcial = (estado === "SAP_MONTADO" || estado === "VALIDADO") && parseExcluidos(row).length > 0;
   const sc        = statusColors(estado, esParcial);
-  const estadoLabel = esParcial ? `${estado} ⚠ PARCIAL` : estado;
+  const estadoLabel = esParcial ? `${estado} ⚠ PARCIAL` : (estado === "ERROR_REVISION_MANUAL" ? "REVISIÓN MANUAL" : estado);
   const detalle   = buildDetalle(row);
 
-  const body = [
+  const baseBody = [
     buildPreciosHtml(db, [row]),
     buildExcluidosHtml([row]),
     buildDiscrepanciasHtml([row]),
   ].filter(Boolean).join("\n");
+
+  const dashboardUrl = process.env.DASHBOARD_URL || process.env.APP_URL || "http://localhost:3000";
+  const ctaUrl = estado === "ERROR_CATALOG" ? `${dashboardUrl}/clientes` : dashboardUrl;
+  const ctaText = estado === "ERROR_CATALOG" ? "Homologar Catálogo" : "Ver en Dashboard";
+  const ctaButton = buildCtaButton(ctaUrl, ctaText);
+
+  const accionText = obtenerAccionRequerida(estado, String(row.error_msg ?? ""));
+  const accionBox = accionText ? `
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px">
+  <tr>
+    <td style="background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:14px 18px;font-family:${FONT};font-size:13px;color:#b45309;line-height:1.5">
+      ${accionText}
+    </td>
+  </tr>
+</table>` : "";
+
+  let body = baseBody;
+  if (estado === "ERROR_REVISION_MANUAL") {
+    body = `
+<p style="font-family:${FONT};font-size:14px;color:${B.erieBlack};line-height:1.6;margin:0 0 16px 0">
+  El pipeline procesó un correo que no cumplía con los criterios de procesamiento automático y se derivó para ser atendido manualmente.
+</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+  <tr style="background:#f8fafc">
+    <td style="padding:10px 12px;font-family:${FONT};font-size:12px;font-weight:700;color:${B.erieBlack};border-bottom:1px solid #e2e8f0">Detalles del Correo</td>
+  </tr>
+  <tr>
+    <td style="padding:12px;font-family:${FONT};font-size:13px;color:${B.erieBlack};line-height:1.5">
+      <b>Remitente:</b> ${row.cliente_nombre || "—"}<br>
+      <b>Asunto:</b> ${row.notas || "—"}<br>
+      <b>Motivo:</b> ${row.error_msg || "—"}
+    </td>
+  </tr>
+</table>`;
+  }
+
+  const finalBody = `
+${accionBox}
+${body || `<p style="font-family:${FONT};font-size:13px;color:${B.cadetGray};margin:0">Sin detalles adicionales.</p>`}
+${ctaButton}
+`;
+
+  const ocTitle = String(row.orden_compra).startsWith("MAIL_") ? "Correo Recibido" : `OC ${row.orden_compra}`;
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -333,7 +442,7 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
         <table width="100%" cellpadding="0" cellspacing="0"><tr>
           <td style="padding:12px 32px 24px 32px">
             <div style="font-family:${FONT};font-size:22px;font-weight:700;color:${B.white};letter-spacing:0.05em;line-height:1.2">
-              OC ${row.orden_compra}
+              ${ocTitle}
             </div>
             <div style="font-family:${FONT};font-size:13px;color:${B.cadetGray};margin-top:4px;letter-spacing:0.05em">
               ${row.cliente_nombre || "—"}
@@ -354,7 +463,7 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
     <!-- ── Body: white ── -->
     <tr>
       <td style="background:${B.white};padding:24px 32px">
-        ${body || `<p style="font-family:${FONT};font-size:13px;color:${B.cadetGray};margin:0">Sin detalles adicionales.</p>`}
+        ${finalBody}
       </td>
     </tr>
 
