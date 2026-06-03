@@ -145,6 +145,9 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
+    const clientNameHint = formData.get("clientNameHint") as string | null;
+    const hasNameHint = !!(clientNameHint && clientNameHint.trim());
+
     // ── Extraer texto para detección de NIT ─────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
@@ -154,25 +157,27 @@ export async function POST(req: NextRequest) {
     const db = getDb();
     const { nits: clientNits, keywords: clientKeywords } = loadClientListsFromDb(db);
 
-    // ── Verificar si ya existe el cliente por NIT ────────────────────────────
-    const detectionResult = detectClientFromPdf(pdfText, clientNits, clientKeywords);
-    if (detectionResult) {
-      // Buscar en DB por carpeta
-      const rows = db.prepare(
-        "SELECT * FROM clientes_aprobados WHERE carpeta = ? AND activo = 1"
-      ).all(detectionResult.carpeta) as Array<{ id: number; carpeta: string; nombre: string; nit_principal: string }>;
+    // ── Verificar si ya existe el cliente por NIT (solo si no hay pista de nombre) ────────────────────────────
+    if (!hasNameHint) {
+      const detectionResult = detectClientFromPdf(pdfText, clientNits, clientKeywords);
+      if (detectionResult) {
+        // Buscar en DB por carpeta
+        const rows = db.prepare(
+          "SELECT * FROM clientes_aprobados WHERE carpeta = ? AND activo = 1"
+        ).all(detectionResult.carpeta) as Array<{ id: number; carpeta: string; nombre: string; nit_principal: string }>;
 
-      if (rows.length > 0) {
-        return NextResponse.json({
-          ok: true,
-          existente: {
-            id:      rows[0].id,
-            carpeta: rows[0].carpeta,
-            nombre:  rows[0].nombre,
-            nit:     rows[0].nit_principal,
-            metodo:  detectionResult.metodo,
-          },
-        });
+        if (rows.length > 0) {
+          return NextResponse.json({
+            ok: true,
+            existente: {
+              id:      rows[0].id,
+              carpeta: rows[0].carpeta,
+              nombre:  rows[0].nombre,
+              nit:     rows[0].nit_principal,
+              metodo:  detectionResult.metodo,
+            },
+          });
+        }
       }
     }
 
@@ -184,8 +189,6 @@ export async function POST(req: NextRequest) {
     // Para análisis de estructura basta con las primeras páginas — mandar todo el PDF
     // genera requests demasiado pesados que causan 529 (overloaded) en Anthropic.
     const visionContent = buildVisionContent(pages.slice(0, 4));
-
-    const clientNameHint = formData.get("clientNameHint") as string | null;
 
     const client = new Anthropic({ apiKey });
     const { tenantDisplayName, cardCodePrefix } = getConfig();
@@ -248,19 +251,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar duplicado por NIT en DB
-    const duplicate = getClienteByNit(db, parsed.nit);
-    if (duplicate) {
-      return NextResponse.json({
-        ok: true,
-        existente: {
-          id:      duplicate.id,
-          carpeta: duplicate.carpeta,
-          nombre:  duplicate.nombre,
-          nit:     duplicate.nit_principal,
-          metodo:  "nit",
-        },
-      });
+    // Verificar duplicado por NIT en DB (solo si no hay pista de nombre)
+    if (!hasNameHint) {
+      const duplicate = getClienteByNit(db, parsed.nit);
+      if (duplicate) {
+        return NextResponse.json({
+          ok: true,
+          existente: {
+            id:      duplicate.id,
+            carpeta: duplicate.carpeta,
+            nombre:  duplicate.nombre,
+            nit:     duplicate.nit_principal,
+            metodo:  "nit",
+          },
+        });
+      }
     }
 
     return NextResponse.json({
