@@ -6,9 +6,13 @@ import { detectClientFromPdf, loadClientListsFromDb } from "@/lib/pdf-classify";
 import { pdfToImages, buildVisionContent } from "@/lib/pdf-vision";
 import { withAnthropicRetry } from "@/lib/anthropic-retry";
 
-function buildMetaPrompt(companyName: string, cardCodePrefix: string): string {
-  return `You are an expert at creating purchase order extraction prompts for Claude AI.
+function buildMetaPrompt(companyName: string, cardCodePrefix: string, clientNameHint?: string | null): string {
+  const hintSection = clientNameHint && clientNameHint.trim()
+    ? `\nNOTE: The user has indicated that this client's name or a major keyword is likely "${clientNameHint.trim()}". Please prioritize matching this name/keyword and verifying if this corresponds to the purchase order issuer.\n`
+    : "";
 
+  return `You are an expert at creating purchase order extraction prompts for Claude AI.
+${hintSection}
 Analyze the provided purchase order PDF from a Colombian company (supplier of ${companyName}, a Colombian printing company).
 
 Extract the following information and generate a complete client configuration.
@@ -181,9 +185,11 @@ export async function POST(req: NextRequest) {
     // genera requests demasiado pesados que causan 529 (overloaded) en Anthropic.
     const visionContent = buildVisionContent(pages.slice(0, 4));
 
+    const clientNameHint = formData.get("clientNameHint") as string | null;
+
     const client = new Anthropic({ apiKey });
     const { tenantDisplayName, cardCodePrefix } = getConfig();
-    const metaPrompt = buildMetaPrompt(tenantDisplayName, cardCodePrefix);
+    const metaPrompt = buildMetaPrompt(tenantDisplayName, cardCodePrefix, clientNameHint);
 
     // Intentar modelos en orden de preferencia — si uno está saturado (529), pasar al siguiente
     const MODELS_FALLBACK = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"];

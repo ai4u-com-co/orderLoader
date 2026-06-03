@@ -43,6 +43,8 @@ export default function ClientesPage() {
   const [saveError, setSaveError]       = useState<string | null>(null);
   const [cardCodePrefix, setCardCodePrefix] = useState("CN");
   const fileInputRef                    = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [clientNameHint, setClientNameHint] = useState("");
 
   const fetchClientes = useCallback(async () => {
     try {
@@ -59,11 +61,14 @@ export default function ClientesPage() {
 
   useEffect(() => { fetchClientes(); }, [fetchClientes]);
 
-  async function handleFileUpload(file: File) {
+  async function handleFileUpload(file: File, nameHint: string = "") {
     setModal({ step: "analyzing" });
     setSaveError(null);
     const fd = new FormData();
     fd.append("pdf", file);
+    if (nameHint.trim()) {
+      fd.append("clientNameHint", nameHint.trim());
+    }
     try {
       const res  = await fetch("/api/clientes/analizar-pdf", { method: "POST", body: fd });
       const data = await res.json() as {
@@ -150,7 +155,7 @@ export default function ClientesPage() {
               <Text variant="xs">Inactivos</Text>
             </div>
           </Card>
-          <Button variant="primary" size="md" onClick={() => { setSaveError(null); setModal({ step: "upload" }); }}>
+          <Button variant="primary" size="md" onClick={() => { setSaveError(null); setSelectedFile(null); setClientNameHint(""); setModal({ step: "upload" }); }}>
             + Agregar cliente desde PDF
           </Button>
         </div>
@@ -218,19 +223,48 @@ export default function ClientesPage() {
                   Sube una orden de compra del nuevo cliente. La IA identificará la empresa, construirá el prompt de extracción, y lo agregará a los clientes aprobados.
                 </Text>
                 {saveError && <div className="text-hot-orange text-sm rounded-lg border border-hot-orange/30 bg-hot-orange/5 px-3 py-2">{saveError}</div>}
-                <div
-                  className="border-2 border-dashed border-erie-black/20 rounded-xl p-10 text-center cursor-pointer hover:border-moderate-blue/50 hover:bg-moderate-blue/5 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileUpload(f); }}
-                >
-                  <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
-                  <div className="text-4xl mb-3">📄</div>
-                  <Text variant="bodyBold" className="text-sm">Arrastra un PDF o haz clic para seleccionar</Text>
-                  <Text variant="xs" className="text-cadet-gray mt-1">Solo archivos .pdf</Text>
-                </div>
-                <div className="flex justify-end">
+                
+                {!selectedFile ? (
+                  <div
+                    className="border-2 border-dashed border-erie-black/20 rounded-xl p-10 text-center cursor-pointer hover:border-moderate-blue/50 hover:bg-moderate-blue/5 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setSelectedFile(f); }}
+                  >
+                    <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setSelectedFile(f); }} />
+                    <div className="text-4xl mb-3">📄</div>
+                    <Text variant="bodyBold" className="text-sm">Arrastra un PDF o haz clic para seleccionar</Text>
+                    <Text variant="xs" className="text-cadet-gray mt-1">Solo archivos .pdf</Text>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between border border-erie-black/10 rounded-xl p-4 bg-white">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <span className="text-2xl">📄</span>
+                      <div className="overflow-hidden">
+                        <Text variant="bodyBold" className="text-sm truncate">{selectedFile.name}</Text>
+                        <Text variant="xs" className="text-cadet-gray">{(selectedFile.size / 1024).toFixed(1)} KB</Text>
+                      </div>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={() => setSelectedFile(null)}>Cambiar archivo</Button>
+                  </div>
+                )}
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-cadet-gray">Nombre del cliente (opcional)</span>
+                  <input
+                    type="text"
+                    className="border border-erie-black/20 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-moderate-blue/30"
+                    placeholder="Ej. Hermeco, Pinturas Prime..."
+                    value={clientNameHint}
+                    onChange={e => setClientNameHint(e.target.value)}
+                  />
+                </label>
+
+                <div className="flex justify-end gap-3">
                   <Button variant="secondary" size="md" onClick={() => setModal({ step: "closed" })}>Cancelar</Button>
+                  <Button variant="primary" size="md" disabled={!selectedFile} onClick={() => { if (selectedFile) handleFileUpload(selectedFile, clientNameHint); }}>
+                    Analizar PDF
+                  </Button>
                 </div>
               </div>
             )}
