@@ -64,7 +64,19 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
   const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
   if (!text) return [null, "Respuesta vacía del modelo", usage];
 
-  const clean = text.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+  // Detectar cuando Claude indica que el adjunto no es una OC
+  const NOT_PO_PHRASES = [
+    "not a purchase order", "is not a purchase order", "not an order",
+    "no es una orden", "no es una OC", "cannot generate the requested json",
+    "is not valid", "not a valid", "this is a", "this image shows",
+  ];
+  if (NOT_PO_PHRASES.some(p => text.toLowerCase().includes(p.toLowerCase()))) {
+    return [null, `Adjunto no es una OC — requiere revisión manual: ${text.slice(0, 200)}`, usage];
+  }
+
+  // Limpiar fences de markdown y extraer bloque JSON aunque Claude haya añadido texto antes
+  const stripped = text.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+  const clean = stripped.startsWith("{") ? stripped : (stripped.match(/\{[\s\S]*\}/)?.[0] ?? stripped);
 
   try {
     const rawOrder = JSON.parse(clean);
