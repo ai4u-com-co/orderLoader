@@ -35,10 +35,6 @@ export interface StepResult {
   detalles: string[];
 }
 
-const SOURCE_FOLDER = "INBOX.A A REVISAR IA";  // fallback: step0 guarda imap_staging_folder en metadata
-const DEST_OK       = "INBOX.A B INGRESADO";   // destino para pedidos limpios (mover desde REVISAR IA)
-const DEST_REVISAR  = "INBOX.A A REVISAR IA";
-
 function isLimpio(row: Record<string, unknown>): boolean {
   if (row.error_msg) return false;
   try {
@@ -50,6 +46,32 @@ function isLimpio(row: Record<string, unknown>): boolean {
     if (val && typeof val === "object" && "ok" in val) return (val as { ok: boolean }).ok === true;
   } catch { /* sin reconciliación */ }
   return true;
+}
+
+function hasValidacionDiferencias(row: Record<string, unknown>): boolean {
+  return String(row.estado) === "ERROR_VALIDACION";
+}
+
+type FolderSet = {
+  SOURCE: string; DEST_OK: string; DEST_DIFERENCIAS: string; DEST_REVISAR: string;
+  SOURCE_NAME: string; OK_NAME: string; DIFERENCIAS_NAME: string; REVISAR_NAME: string;
+};
+
+function buildFolderSet(config: ReturnType<typeof getConfig>): FolderSet {
+  const s = config.stagingFolderName;
+  const ok = config.inboxFolderName;
+  const dif = config.diferenciasFolder;
+  const rev = config.stagingFolderName; // errores graves quedan en staging
+  return {
+    SOURCE:            `INBOX.${s}`,
+    DEST_OK:           `INBOX.${ok}`,
+    DEST_DIFERENCIAS:  `INBOX.${dif}`,
+    DEST_REVISAR:      `INBOX.${rev}`,
+    SOURCE_NAME:       s,
+    OK_NAME:           ok,
+    DIFERENCIAS_NAME:  dif,
+    REVISAR_NAME:      rev,
+  };
 }
 
 type MoveJob = {
@@ -192,9 +214,10 @@ async function moveInImap(
       await imap.connect();
       const lock = await imap.getMailboxLock(srcFolder);
       try {
-        const destSandraFolder = `INBOX.${config.manualReviewFolderName}`;
-        try { await imap.mailboxCreate(DEST_REVISAR); } catch { /* ya existe */ }
-        try { await imap.mailboxCreate(destSandraFolder); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(`INBOX.${config.stagingFolderName}`); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(`INBOX.${config.inboxFolderName}`); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(`INBOX.${config.diferenciasFolder}`); } catch { /* ya existe */ }
+        try { await imap.mailboxCreate(`INBOX.${config.manualReviewFolderName}`); } catch { /* ya existe */ }
 
         // ── Construir mapa: messageId → UIDs actuales en la carpeta fuente ──
         // Usa el envelope IMAP que incluye messageId directamente.
@@ -250,8 +273,9 @@ export async function run(): Promise<StepResult> {
     "SELECT * FROM pedidos_maestro WHERE estado = 'NOTIFICADO'"
   ).all() as Array<Record<string, unknown>>;
 
-  const destSandraFolder = `INBOX.${config.manualReviewFolderName}`;
-  const destSandraName = config.manualReviewFolderName;
+  const F = buildFolderSet(config);
+  const manualName = config.manualReviewFolderName;
+  const manualFolder = `INBOX.${manualName}`;
 
   const destByOrden: Record<string, string> = {};
   const moveJobs: MoveJob[] = [];
@@ -266,23 +290,21 @@ export async function run(): Promise<StepResult> {
       const uid            = Number(meta.imap_uid ?? 0);
       const messageId      = meta.message_id as string | undefined;
       const graphMessageId = isGraph ? String(meta.graph_message_id) : undefined;
-      const src            = meta.imap_staging_folder ?? SOURCE_FOLDER;
-      const destImap       = isLimpio(row)
-        ? (meta.has_extra_files === true ? destSandraFolder : DEST_OK)
-        : DEST_REVISAR;
-      // Para Graph, solo los nombres "cortos" sin prefijo INBOX.
-      const destName       = isLimpio(row)
-        ? (meta.has_extra_files === true ? destSandraName : "A B INGRESADO")
-        : "A A REVISAR IA";
+      const src            = meta.imap_staging_folder ?? F.SOURCE;
+      const destImap = isLimpio(row)
+        ? (meta.has_extra_files === true ? manualFolder : F.DEST_OK)
+        : (hasValidacionDiferencias(row) ? F.DEST_DIFERENCIAS : F.DEST_REVISAR);
+      const destName = isLimpio(row)
+        ? (meta.has_extra_files === true ? manualName : F.OK_NAME)
+        : (hasValidacionDiferencias(row) ? F.DIFERENCIAS_NAME : F.REVISAR_NAME);
       moveJobs.push({ uid, messageId, source: src, dest: destImap, graphMessageId, graphDestFolderName: destName });
       destByOrden[String(row.orden_compra)] = destImap;
     } catch { /* metadata no disponible */ }
   }
 
   // Deduplicar por messageId: varios pedidos pueden venir del mismo correo.
-  // Si un correo tiene múltiples OCs, se mueve UNA sola vez al destino más restrictivo
-  // (REVISAR_IA > REVISION_MANUAL > INGRESADO) para no intentar mover el mismo UID dos veces.
-  const DEST_PRIORITY: Record<string, number> = { [DEST_REVISAR]: 2, [destSandraFolder]: 1, [DEST_OK]: 0 };
+  // Si un correo tiene múltiples OCs, se mueve UNA sola vez al destino más restrictivo.
+  const DEST_PRIORITY: Record<string, number> = { [F.DEST_REVISAR]: 3, [manualFolder]: 2, [F.DEST_DIFERENCIAS]: 1, [F.DEST_OK]: 0 };
   const byMessageId = new Map<string, MoveJob>();
   for (const job of moveJobs) {
     const key = job.messageId ?? `uid:${job.uid}`;
@@ -304,7 +326,7 @@ export async function run(): Promise<StepResult> {
     db.transaction(() => {
       for (const row of pendientes) {
         const oc   = String(row.orden_compra);
-        const dest = destByOrden[oc] ?? DEST_REVISAR;
+        const dest = destByOrden[oc] ?? F.DEST_REVISAR;
         db.prepare("UPDATE pedidos_maestro SET estado='CERRADO', fase_actual=7 WHERE orden_compra=?").run(oc);
         logPipeline(db, oc, 7, "archive", "OK", `CERRADO → ${dest}`);
       }
@@ -330,8 +352,12 @@ export async function run(): Promise<StepResult> {
         const row = cerradoMap.get(oc);
         if (!row) continue;
         for (const { uid, messageId, hasExtraFiles, source, graphMessageId } of entries) {
-          const dest     = isLimpio(row) ? (hasExtraFiles ? destSandraFolder : DEST_OK) : DEST_REVISAR;
-          const destName = isLimpio(row) ? (hasExtraFiles ? destSandraName : "A B INGRESADO") : "A A REVISAR IA";
+          const dest     = isLimpio(row)
+            ? (hasExtraFiles ? manualFolder : F.DEST_OK)
+            : (hasValidacionDiferencias(row) ? F.DEST_DIFERENCIAS : F.DEST_REVISAR);
+          const destName = isLimpio(row)
+            ? (hasExtraFiles ? manualName : F.OK_NAME)
+            : (hasValidacionDiferencias(row) ? F.DIFERENCIAS_NAME : F.REVISAR_NAME);
           orphanJobsRaw.push({ uid, messageId, source, dest, graphMessageId, graphDestFolderName: destName });
         }
       }

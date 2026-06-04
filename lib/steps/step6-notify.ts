@@ -128,7 +128,7 @@ export async function run(): Promise<StepResult> {
         }
       } catch { /* ignorar si no hay metadata */ }
 
-      let html = buildHtmlForOrder(db, row, fecha);
+      let html = buildHtmlForOrder(db, row, fecha, hasExtraFiles);
       if (hasExtraFiles) {
         const nota = `
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0">

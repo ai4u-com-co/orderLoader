@@ -364,6 +364,20 @@ export async function run(): Promise<StepResult> {
             fs.copyFileSync(metaSrc, path.join(ocFolder, "correo_metadata.json"));
           }
 
+          // Si el pedido ya fue notificado o cerrado (descarga duplicada del mismo email),
+          // marcar esta carpeta como done sin sobreescribir el estado en la DB.
+          const existingRow = db.prepare(
+            `SELECT estado, notificacion_enviada FROM pedidos_maestro WHERE orden_compra = ?`
+          ).get(order!.NumAtCard) as { estado: string; notificacion_enviada: number } | undefined;
+          if (existingRow && (existingRow.notificacion_enviada === 1 || existingRow.estado === "CERRADO" || existingRow.estado === "NOTIFICADO")) {
+            fs.writeFileSync(doneMarker, order!.NumAtCard);
+            fs.rmSync(retriesPath, { force: true });
+            result.saltados++;
+            result.detalles.push(`  ↩ OC ${order!.NumAtCard} → ya procesada (${existingRow.estado}), carpeta duplicada omitida`);
+            logPipeline(db, order!.NumAtCard, 1, "parse", "OK", `Duplicado: orden ya procesada (${existingRow.estado})`);
+            continue;
+          }
+
           const costoIaUsd = ((usage.input ?? 0) / 1e6) * 3.0 + ((usage.output ?? 0) / 1e6) * 15.0;
 
           const tx = db.transaction(() => {

@@ -343,6 +343,27 @@ function buildExcluidosHtml(rows: Array<Record<string, unknown>>): string {
   </table>`;
 }
 
+// ─── Email archive destination (mirrors isLimpio from step7-archive.ts) ──────
+
+function predictDestFolder(row: Record<string, unknown>, hasExtraFiles: boolean, config: ReturnType<typeof getConfig>): string {
+  const limpio = (() => {
+    if (row.error_msg) return false;
+    try {
+      const excluidos = JSON.parse(String(row.items_excluidos ?? "[]"));
+      if (!Array.isArray(excluidos) || excluidos.length > 0) return false;
+    } catch { return false; }
+    try {
+      const val = JSON.parse(String(row.validacion_resultado ?? "null"));
+      if (val && typeof val === "object" && "ok" in val) return (val as { ok: boolean }).ok === true;
+    } catch { /* sin reconciliación */ }
+    return true;
+  })();
+  if (limpio && hasExtraFiles) return config.manualReviewFolderName;
+  if (limpio) return config.inboxFolderName;
+  if (String(row.estado) === "ERROR_VALIDACION") return config.diferenciasFolder;
+  return config.stagingFolderName;
+}
+
 // ─── Public exports ───────────────────────────────────────────────────────────
 
 export function buildSubjectForOrder(row: Record<string, unknown>, hasExtraFiles = false, tenant = ""): string {
@@ -364,7 +385,7 @@ export function buildSubjectForOrder(row: Record<string, unknown>, hasExtraFiles
   return `${prefix} ${ocLabel} | ${row.cliente_nombre || "—"} | ${estadoLabel}${extraSuffix}`;
 }
 
-export function buildHtmlForOrder(db: Database.Database, row: Record<string, unknown>, fecha: string): string {
+export function buildHtmlForOrder(db: Database.Database, row: Record<string, unknown>, fecha: string, hasExtraFiles = false): string {
   const estado    = String(row.estado);
   const esParcial = (estado === "SAP_MONTADO" || estado === "VALIDADO") && parseExcluidos(row).length > 0;
   const sc        = statusColors(estado, esParcial);
@@ -377,10 +398,22 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
     buildDiscrepanciasHtml([row]),
   ].filter(Boolean).join("\n");
 
+  const config = getConfig();
+  const destFolder = predictDestFolder(row, hasExtraFiles, config);
+  const destFolderColor = destFolder === "A B INGRESADO" ? B.successText : B.warnText;
+  const destFolderBg    = destFolder === "A B INGRESADO" ? B.successBg   : B.warnBg;
+  const emailFolderInfo = `
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px">
+  <tr>
+    <td style="background:${destFolderBg};border-radius:6px;padding:10px 14px;font-family:${FONT};font-size:12px;color:${destFolderColor}">
+      📁 <b>Correo original movido a:</b> <span style="font-family:monospace,${FONT}">${destFolder}</span>
+    </td>
+  </tr>
+</table>`;
+
   const dashboardUrl = process.env.DASHBOARD_URL || process.env.APP_URL || "http://localhost:3000";
   const ctaUrl = estado === "ERROR_CATALOG" ? `${dashboardUrl}/clientes` : dashboardUrl;
-  const ctaText = estado === "ERROR_CATALOG" ? "Homologar Catálogo" : "Ver en Dashboard";
-  const ctaButton = buildCtaButton(ctaUrl, ctaText);
+  const ctaButton = estado === "ERROR_CATALOG" ? buildCtaButton(ctaUrl, "Homologar Catálogo") : "";
 
   const accionText = obtenerAccionRequerida(estado, String(row.error_msg ?? ""));
   const accionBox = accionText ? `
@@ -416,6 +449,7 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
 ${accionBox}
 ${body || `<p style="font-family:${FONT};font-size:13px;color:${B.cadetGray};margin:0">Sin detalles adicionales.</p>`}
 ${ctaButton}
+${emailFolderInfo}
 `;
 
   const ocTitle = String(row.orden_compra).startsWith("MAIL_") ? "Correo Recibido" : `OC ${row.orden_compra}`;

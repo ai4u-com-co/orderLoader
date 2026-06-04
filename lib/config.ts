@@ -60,6 +60,8 @@ export interface Config {
   tenantDisplayName: string;
   receptorKeywords: string[];
   stagingFolderName: string;
+  inboxFolderName: string;
+  diferenciasFolder: string;
   manualReviewFolderName: string;
   cardCodePrefix: string;
 }
@@ -171,8 +173,10 @@ export function getConfig(): Config {
         cardCodePrefix:    process.env.CARD_CODE_PREFIX ?? meta.cardCodePrefix,
       };
     })(),
-    stagingFolderName:      process.env.STAGING_FOLDER_NAME       ?? "A A REVISAR IA",
-    manualReviewFolderName: process.env.MANUAL_REVIEW_FOLDER_NAME ?? "A A SANDRA",
+    stagingFolderName:      process.env.STAGING_FOLDER_NAME        ?? "A A REVISAR IA",
+    inboxFolderName:        process.env.INBOX_FOLDER_NAME          ?? "A B INGRESADO",
+    diferenciasFolder:      process.env.DIFERENCIAS_FOLDER_NAME    ?? "A A REVISAR IA",
+    manualReviewFolderName: process.env.MANUAL_REVIEW_FOLDER_NAME  ?? "A A SANDRA",
   };
 
   return _config;
