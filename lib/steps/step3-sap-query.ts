@@ -31,24 +31,30 @@ async function fetchCatNumMappings(
   catNums: string[]
 ): Promise<Map<string, string>> {
   const mapping = new Map<string, string>();
-  await Promise.all(
-    catNums.map(async (catNum) => {
-      try {
-        const escapedCard = cardCode.replace(/'/g, "''");
-        const escapedCat  = catNum.replace(/'/g, "''");
-        const res = await sap.get<{ value: Array<{ ItemCode: string }> }>("AlternateCatNum", {
-          "$filter": `CardCode eq '${escapedCard}' and Substitute eq '${escapedCat}'`,
-          "$select": "ItemCode",
-          "$top": "1",
-        });
-        if (res.value?.length > 0) {
-          mapping.set(catNum, res.value[0].ItemCode);
+  
+  // Procesar en lotes de 5 para evitar saturación de red o rate-limits en SAP/Vercel
+  const chunkSize = 5;
+  for (let i = 0; i < catNums.length; i += chunkSize) {
+    const chunk = catNums.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (catNum) => {
+        try {
+          const escapedCard = cardCode.replace(/'/g, "''");
+          const escapedCat  = catNum.replace(/'/g, "''");
+          const res = await sap.get<{ value: Array<{ ItemCode: string }> }>("AlternateCatNum", {
+            "$filter": `CardCode eq '${escapedCard}' and Substitute eq '${escapedCat}'`,
+            "$select": "ItemCode",
+            "$top": "1",
+          });
+          if (res.value?.length > 0) {
+            mapping.set(catNum, res.value[0].ItemCode);
+          }
+        } catch (err: any) {
+          throw new Error(`Error consultando SAP para el artículo ${catNum}: ${err.message || String(err)}`);
         }
-      } catch {
-        // Fallo silencioso: artículo no se agrega al mapa → será excluido
-      }
-    })
-  );
+      })
+    );
+  }
   return mapping;
 }
 

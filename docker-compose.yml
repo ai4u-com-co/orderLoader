@@ -15,7 +15,7 @@ services:
       # Zona horaria Colombia (GMT-5) — evita desfase UTC en fechas SAP
       - TZ=America/Bogota
     env_file:
-      - .env
+      - .env.tamaprint
     dns:
       - 8.8.8.8
       - 8.8.4.4
