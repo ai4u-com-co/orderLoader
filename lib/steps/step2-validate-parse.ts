@@ -12,7 +12,7 @@ import path from "path";
 import { getDb, logPipeline } from "../db";
 import { getConfig } from "../config";
 import { sendAlertEmail } from "../mailer";
-import { getSapClient, clearSapClient } from "../sap-client";
+import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
 
@@ -124,12 +124,12 @@ export async function run(): Promise<StepResult> {
   // Intentar conexión SAP para verificación de duplicados.
   // Si SAP no está disponible, se valida solo el formato y se deja en PARSE_VALIDO
   // para que step3 lo procese cuando SAP vuelva.
-  let sap: Awaited<ReturnType<typeof getSapClient>> | null = null;
+  let sap: Awaited<ReturnType<typeof getActiveSap>> | null = null;
   try {
-    sap = await getSapClient();
+    sap = await getActiveSap();
   } catch {
     result.detalles.push("⚠ SAP no disponible — solo se validará formato; verificación de duplicados diferida a step3");
-    clearSapClient();
+    clearActiveSap();
   }
 
   const now = new Date().toISOString();

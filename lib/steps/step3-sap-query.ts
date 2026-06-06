@@ -121,9 +121,17 @@ export async function run(): Promise<StepResult> {
         result.detalles.push(`  ⚠ OC ${oc}: artículo ${m.SupplierCatNum} no existe en catálogo SAP — excluido`);
       }
 
-      if (present.length === 0) {
+      const totalUnique = allCatNums.length;
+      const missingPct = totalUnique > 0 ? missing.length / totalUnique : 0;
+
+      // Bloquear si ninguno existe O si >50% están ausentes del catálogo:
+      // con tantas ausencias es más probable un problema transitorio en SAP
+      // que artículos genuinamente sin registrar.
+      if (present.length === 0 || missingPct > 0.5) {
         const missingList = missing.map(l => l.SupplierCatNum).join(", ");
-        const msg = `Ningún artículo existe en catálogo SAP: ${missingList}`;
+        const msg = present.length === 0
+          ? `Ningún artículo existe en catálogo SAP: ${missingList}`
+          : `${missing.length}/${totalUnique} artículos ausentes del catálogo SAP (${Math.round(missingPct * 100)}% > umbral 50%) — posible problema transitorio. Artículos ausentes: ${missingList}`;
         db.prepare(`
           UPDATE pedidos_maestro SET estado='ERROR_CATALOG', error_msg=?, items_excluidos=?, fase_actual=3
           WHERE orden_compra=?
