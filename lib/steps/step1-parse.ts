@@ -354,6 +354,11 @@ export async function run(): Promise<StepResult> {
           const hoy = new Date();
           order.DocDate = `${hoy.getFullYear()}${String(hoy.getMonth()+1).padStart(2,"0")}${String(hoy.getDate()).padStart(2,"0")}`;
 
+          // Normalizar NumAtCard: quitar espacios extremos y colapsar espacios internos múltiples.
+          // Claude puede extraer "Y-  1 -  18418" o "Y- 1 -  18418" del mismo PDF — sin
+          // normalización el sistema los trata como OC distintas y sube duplicados a SAP.
+          order.NumAtCard = order.NumAtCard.trim().replace(/\s+/g, " ");
+
           // Sub-folder por OC: carpeta_origen independiente para cada pedido del correo
           const ocFolder = path.join(carpetaPath, order.NumAtCard);
           fs.mkdirSync(ocFolder, { recursive: true });

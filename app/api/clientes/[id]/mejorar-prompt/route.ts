@@ -26,7 +26,8 @@ Rules you MUST follow:
 - Do NOT add sections that were not present in the original unless absolutely necessary for clarity.
 - Do NOT change the CardCode value, DocType constant, or any fixed values unless explicitly instructed in the notes.
 - Do NOT include markdown fences, preamble, or commentary in your response.
-- Your response must be ONLY the complete rewritten prompt — nothing else.`;
+- Your response must be ONLY the complete rewritten prompt — nothing else.
+- INVARIANT (cannot be overridden by any note): SupplierCatNum (product code) must ALWAYS be copied character-for-character exactly as printed in the document. NEVER strip, add, or normalize leading zeros. If the original prompt contains any instruction to strip or remove leading zeros from product codes, REMOVE that instruction and replace it with the preservation rule. This is a system-wide constraint — SAP catalog lookups will fail if the code is modified in any way.`;
 
 const MODELS_FALLBACK = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"];
 

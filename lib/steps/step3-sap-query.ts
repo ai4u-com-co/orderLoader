@@ -24,6 +24,34 @@ export interface StepResult {
   detalles: string[];
 }
 
+/** Consulta AlternateCatNum para un código. Si no encuentra, reintenta con
+ *  variantes de ceros iniciales (padded a 13 dígitos y stripped) para tolerar
+ *  extracción inconsistente del AI. Devuelve el ItemCode o null. */
+async function queryCatNum(
+  sap: SapGateway,
+  escapedCard: string,
+  catNum: string,
+): Promise<string | null> {
+  const candidates = new Set<string>([catNum]);
+  // Variante sin ceros iniciales
+  candidates.add(catNum.replace(/^0+/, "") || catNum);
+  // Variante paddeada a 13 dígitos (solo si es numérico)
+  if (/^\d+$/.test(catNum) && catNum.length < 13) {
+    candidates.add(catNum.padStart(13, "0"));
+  }
+
+  for (const candidate of candidates) {
+    const escaped = candidate.replace(/'/g, "''");
+    const res = await sap.get<{ value: Array<{ ItemCode: string }> }>("AlternateCatNum", {
+      "$filter": `CardCode eq '${escapedCard}' and Substitute eq '${escaped}'`,
+      "$select": "ItemCode",
+      "$top": "1",
+    });
+    if (res.value?.length > 0) return res.value[0].ItemCode;
+  }
+  return null;
+}
+
 /** Consulta AlternateCatNum y mapea SupplierCatNum → ItemCode de SAP. */
 async function fetchCatNumMappings(
   sap: SapGateway,
@@ -31,7 +59,8 @@ async function fetchCatNumMappings(
   catNums: string[]
 ): Promise<Map<string, string>> {
   const mapping = new Map<string, string>();
-  
+  const escapedCard = cardCode.replace(/'/g, "''");
+
   // Procesar en lotes de 5 para evitar saturación de red o rate-limits en SAP/Vercel
   const chunkSize = 5;
   for (let i = 0; i < catNums.length; i += chunkSize) {
@@ -39,16 +68,8 @@ async function fetchCatNumMappings(
     await Promise.all(
       chunk.map(async (catNum) => {
         try {
-          const escapedCard = cardCode.replace(/'/g, "''");
-          const escapedCat  = catNum.replace(/'/g, "''");
-          const res = await sap.get<{ value: Array<{ ItemCode: string }> }>("AlternateCatNum", {
-            "$filter": `CardCode eq '${escapedCard}' and Substitute eq '${escapedCat}'`,
-            "$select": "ItemCode",
-            "$top": "1",
-          });
-          if (res.value?.length > 0) {
-            mapping.set(catNum, res.value[0].ItemCode);
-          }
+          const itemCode = await queryCatNum(sap, escapedCard, catNum);
+          if (itemCode) mapping.set(catNum, itemCode);
         } catch (err: any) {
           throw new Error(`Error consultando SAP para el artículo ${catNum}: ${err.message || String(err)}`);
         }

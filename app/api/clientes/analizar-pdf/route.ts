@@ -95,6 +95,8 @@ Analyze the provided purchase order document and generate a JSON object that fai
   If it does NOT match, you confused the Price column with the Subtotal column — re-read the document.
   The Subtotal column is NEVER the price. If check fails, the price you extracted is wrong.
 
+**SupplierCatNum (product code)**: Copy EXACTLY as it appears in the document — character by character. NEVER strip, add, or modify leading zeros or any other character. If the document prints "0040001000412", the output must be "0040001000412". If it prints "40001000412", the output must be "40001000412". The downstream system matches this code against the client's catalog in SAP — any modification will cause a lookup failure.
+
 **Missing fields**: Use empty string ""
 
 ### 4. FIELD MAPPING
@@ -108,7 +110,7 @@ Analyze the provided purchase order document and generate a JSON object that fai
 | [delivery date field] | DocDueDate | YYYYMMDD |
 | [emission date field] | TaxDate | YYYYMMDD |
 | [observations field] | Comments | Verbatim, "" if absent |
-| [product code column] | DocumentLines[].SupplierCatNum | String, same order as PDF |
+| [product code column] | DocumentLines[].SupplierCatNum | **Copied EXACTLY as printed — no normalization of any kind** |
 | [quantity column] | DocumentLines[].Quantity | Number |
 | [unit price column] | DocumentLines[].UnitPrice | Decimal, 0 if absent |
 | [delivery date column] | DocumentLines[].DeliveryDate | YYYYMMDD |
@@ -122,6 +124,7 @@ Before generating the response, verify:
 - ✅ Numbers use correct format (no thousands separators, dot for decimal)
 - ✅ UnitPrice × Quantity ≈ line subtotal for every row — if not, the price column is wrong
 - ✅ DocumentLines preserves the same item order as the PDF — no grouping of identical items
+- ✅ SupplierCatNum values are copied character-for-character as printed (leading zeros preserved if present)
 - ✅ Valid JSON syntax — no trailing commas, no extra fields
 
 ## RESPONSE FORMAT
