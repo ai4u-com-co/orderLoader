@@ -110,6 +110,18 @@ export async function run(): Promise<StepResult> {
         continue;
       }
 
+      // Correos sin PDF / sin cliente reconocido: van directo a Sandra, sin notificación
+      if (oc.startsWith("MAIL_")) {
+        db.prepare(`
+          UPDATE pedidos_maestro SET notificacion_enviada=1, estado='NOTIFICADO', ts_notified=?, fase_actual=6
+          WHERE orden_compra=?
+        `).run(now, oc);
+        logPipeline(db, oc, 6, "notify", "OK", "Revisión manual — sin notificación");
+        result.procesados++;
+        result.detalles.push(`↷ OC ${oc} → NOTIFICADO (revisión manual, sin email)`);
+        continue;
+      }
+
       // Registrar intención antes de enviar: transicionar a NOTIFICANDO
       db.prepare(`
         UPDATE pedidos_maestro SET estado='NOTIFICANDO', notificacion_enviada=0

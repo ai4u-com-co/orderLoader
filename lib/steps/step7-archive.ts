@@ -291,12 +291,15 @@ export async function run(): Promise<StepResult> {
       const messageId      = meta.message_id as string | undefined;
       const graphMessageId = isGraph ? String(meta.graph_message_id) : undefined;
       const src            = meta.imap_staging_folder ?? F.SOURCE;
-      const destImap = isLimpio(row)
-        ? (meta.has_extra_files === true ? manualFolder : F.DEST_OK)
-        : (hasValidacionDiferencias(row) ? F.DEST_DIFERENCIAS : F.DEST_REVISAR);
-      const destName = isLimpio(row)
-        ? (meta.has_extra_files === true ? manualName : F.OK_NAME)
-        : (hasValidacionDiferencias(row) ? F.DIFERENCIAS_NAME : F.REVISAR_NAME);
+      const isRevisionManual = String(row.orden_compra).startsWith("MAIL_");
+      const destImap = isRevisionManual ? manualFolder
+        : isLimpio(row)
+          ? (meta.has_extra_files === true ? manualFolder : F.DEST_OK)
+          : (hasValidacionDiferencias(row) ? F.DEST_DIFERENCIAS : F.DEST_REVISAR);
+      const destName = isRevisionManual ? manualName
+        : isLimpio(row)
+          ? (meta.has_extra_files === true ? manualName : F.OK_NAME)
+          : (hasValidacionDiferencias(row) ? F.DIFERENCIAS_NAME : F.REVISAR_NAME);
       moveJobs.push({ uid, messageId, source: src, dest: destImap, graphMessageId, graphDestFolderName: destName });
       destByOrden[String(row.orden_compra)] = destImap;
     } catch { /* metadata no disponible */ }
