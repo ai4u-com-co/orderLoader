@@ -9,7 +9,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 import { getConfig } from "../config";
 import { sendAlertEmail } from "../mailer";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
@@ -156,7 +156,7 @@ export async function run(): Promise<StepResult> {
       order = JSON.parse(fs.readFileSync(markerPath, "utf8")) as SapB1Order;
     } catch (e) {
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_PARSE', error_msg=? WHERE orden_compra=?`)
-        .run(`data_extraida.json no es JSON válido: ${String(e).slice(0, 500)}`, oc);
+        .run(`data_extraida.json no es JSON válido: ${errToMsg(e).slice(0, 1000)}`, oc);
       logPipeline(db, oc, 2, "validate", "ERROR", "JSON inválido");
       result.errores++;
       result.detalles.push(`✗ OC ${oc} → ERROR_PARSE: JSON inválido`);
@@ -236,7 +236,7 @@ export async function run(): Promise<StepResult> {
         UPDATE pedidos_maestro SET estado='PARSE_VALIDO', fase_actual=2, error_msg=NULL, validacion_resultado=?
         WHERE orden_compra=?
       `).run(resultado, oc);
-      logPipeline(db, oc, 2, "validate", "WARN", `Error SAP en check duplicado: ${String(e).slice(0, 500)}`);
+      logPipeline(db, oc, 2, "validate", "WARN", `Error SAP en check duplicado: ${errToMsg(e).slice(0, 1000)}`);
       result.procesados++;
       result.detalles.push(`⚠ OC ${oc} → PARSE_VALIDO (formato OK; error SAP al verificar duplicado: ${String(e).slice(0, 60)})`);
     }

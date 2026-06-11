@@ -11,7 +11,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapGateway } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
@@ -121,7 +121,7 @@ export async function run(): Promise<StepResult> {
     try {
       aiData = JSON.parse(fs.readFileSync(markerPath, "utf8")) as SapB1Order;
     } catch (e) {
-      const msg = `data_extraida.json inválido: ${String(e).slice(0, 500)}`;
+      const msg = `data_extraida.json inválido: ${errToMsg(e).slice(0, 1000)}`;
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_CATALOG', error_msg=? WHERE orden_compra=?`).run(msg, oc);
       logPipeline(db, oc, 3, "sap_catalog", "ERROR", msg);
       result.errores++;
@@ -176,8 +176,8 @@ export async function run(): Promise<StepResult> {
 
     } catch (e) {
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_CATALOG', error_msg=? WHERE orden_compra=?`)
-        .run(String(e).slice(0, 1000), oc);
-      logPipeline(db, oc, 3, "sap_catalog", "ERROR", String(e).slice(0, 1000));
+        .run(errToMsg(e).slice(0, 2000), oc);
+      logPipeline(db, oc, 3, "sap_catalog", "ERROR", errToMsg(e).slice(0, 2000));
       result.errores++;
       result.detalles.push(`✗ OC ${oc}: ${String(e).slice(0, 500)}`);
     }

@@ -26,7 +26,7 @@ import fs from "fs";
 import path from "path";
 import { ImapFlow } from "imapflow";
 import { getConfig } from "../config";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 
 export interface StepResult {
   procesados: number;
@@ -177,11 +177,11 @@ async function moveInGraph(
         await moveMessage(token, config.emailUser, job.graphMessageId, destId);
         detalles.push(`✓ Correo Graph → ${job.graphDestFolderName}`);
       } catch (e) {
-        detalles.push(`⚠ No se pudo mover Graph a ${job.graphDestFolderName}: ${String(e).slice(0, 100)}`);
+        detalles.push(`⚠ No se pudo mover Graph a ${job.graphDestFolderName}: ${errToMsg(e).slice(0, 500)}`);
       }
     }
   } catch (e) {
-    detalles.push(`⚠ Error Graph archive: ${String(e).slice(0, 100)}`);
+    detalles.push(`⚠ Error Graph archive: ${errToMsg(e).slice(0, 500)}`);
   }
 }
 
@@ -258,7 +258,7 @@ async function moveInImap(
       }
       await imap.logout();
     } catch (e) {
-      detalles.push(`⚠ No se pudo mover desde ${srcFolder}: ${String(e).slice(0, 100)}`);
+      detalles.push(`⚠ No se pudo mover desde ${srcFolder}: ${errToMsg(e).slice(0, 500)}`);
     }
   }
 }
@@ -389,7 +389,7 @@ export async function run(): Promise<StepResult> {
       }
     }
   } catch (e) {
-    result.detalles.push(`⚠ Error limpiando huérfanos: ${String(e).slice(0, 100)}`);
+    result.detalles.push(`⚠ Error limpiando huérfanos: ${errToMsg(e).slice(0, 500)}`);
   }
 
   return result;

@@ -10,7 +10,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
@@ -83,7 +83,7 @@ export async function run(): Promise<StepResult> {
       pdfData = JSON.parse(fs.readFileSync(markerPath, "utf8")) as SapB1Order;
     } catch (e) {
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_VALIDACION', error_msg=? WHERE orden_compra=?`)
-        .run(`data_extraida.json inválido: ${String(e).slice(0, 500)}`, oc);
+        .run(`data_extraida.json inválido: ${errToMsg(e).slice(0, 1000)}`, oc);
       logPipeline(db, oc, 5, "reconcile", "ERROR", "JSON inválido");
       result.errores++;
       result.detalles.push(`✗ OC ${oc}: data_extraida.json inválido`);
@@ -238,8 +238,8 @@ export async function run(): Promise<StepResult> {
       }
     } catch (e) {
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_SAP', error_msg=? WHERE orden_compra=?`)
-        .run(String(e).slice(0, 1000), oc);
-      logPipeline(db, oc, 5, "reconcile", "ERROR", String(e).slice(0, 1000));
+        .run(errToMsg(e).slice(0, 2000), oc);
+      logPipeline(db, oc, 5, "reconcile", "ERROR", errToMsg(e).slice(0, 2000));
       result.errores++;
       result.detalles.push(`✗ OC ${oc}: ${String(e).slice(0, 500)}`);
     }

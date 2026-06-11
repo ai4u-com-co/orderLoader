@@ -262,6 +262,14 @@ export function logPipeline(
   ).run(oc, fase, faseNombre, estado, mensaje, inputTokens ?? null, outputTokens ?? null, model ?? null);
 }
 
+/** Convierte cualquier valor capturado en catch a string incluyendo el stack trace. */
+export function errToMsg(e: unknown): string {
+  if (e instanceof Error) {
+    return e.stack ?? e.message;
+  }
+  return String(e);
+}
+
 export function backupDb(): string | null {
   const config = getConfig();
   if (!fs.existsSync(config.dbPath)) return null;

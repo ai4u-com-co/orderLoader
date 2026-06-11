@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { getConfig } from "../config";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 import { OrderStatus } from "../constants";
 import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
@@ -387,7 +387,7 @@ export async function run(): Promise<StepResult> {
 
           const tx = db.transaction(() => {
             insertSapOrder(db, order, ocFolder, clienteInfo.nombre);
-            db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=? WHERE orden_compra=?`)
+            db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd, 0)+? WHERE orden_compra=?`)
               .run(costoIaUsd, order.NumAtCard);
             logPipeline(db, order.NumAtCard, 1, "parse", "OK", `PDF: ${pdfFile}`, usage.input, usage.output, "claude-sonnet-4-6");
           });
@@ -410,12 +410,12 @@ export async function run(): Promise<StepResult> {
           const retries = fs.existsSync(retriesPath)
             ? parseInt(fs.readFileSync(retriesPath, "utf8") || "0") + 1 : 1;
           if (retries >= 3) {
-            fs.writeFileSync(errorPath, String(e));
+            fs.writeFileSync(errorPath, errToMsg(e));
             fs.rmSync(retriesPath, { force: true });
-            registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, carpeta, String(e));
-            } else {
-              fs.writeFileSync(retriesPath, String(retries));
-            }
+            registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, carpeta, errToMsg(e));
+          } else {
+            fs.writeFileSync(retriesPath, String(retries));
+          }
         }
       }
     }

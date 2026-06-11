@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
 import { getConfig } from "../config";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, errToMsg } from "../db";
 import { sendAlertEmail } from "../mailer";
 import { buildSubjectForOrder, buildHtmlForOrder } from "./step6-templates";
 
@@ -191,8 +191,8 @@ export async function run(): Promise<StepResult> {
       result.procesados++;
       result.detalles.push(`✓ OC ${oc} → NOTIFICADO`);
     } catch (e) {
-      const errMsg = String(e);
-      logPipeline(db, oc, 6, "notify", "ERROR", errMsg.slice(0, 1000));
+      const errMsg = errToMsg(e);
+      logPipeline(db, oc, 6, "notify", "ERROR", errMsg.slice(0, 2000));
       result.errores++;
       result.detalles.push(`✗ OC ${oc}: ${errMsg.slice(0, 200)}`);
       sendAlertEmail(

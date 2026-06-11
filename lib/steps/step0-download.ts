@@ -22,7 +22,7 @@ import fs from "fs";
 import path from "path";
 import { getConfig } from "../config";
 import {
-  getDb, logPipeline, ensureWorkspaceDirs,
+  getDb, logPipeline, errToMsg, ensureWorkspaceDirs,
   insertPendingMove, completePendingMove, failPendingMove, getPendingMoves,
 } from "../db";
 import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
@@ -653,6 +653,9 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
             logPipeline(db, folderName, 0, "triage", "OK",
               `adjuntos=${clasificados.length + otherAttachments.length}`,
               triageResponse.inputTokens, triageResponse.outputTokens, TRIAGE_MODEL);
+            const triageCostUsd = (triageResponse.inputTokens * 0.80 + triageResponse.outputTokens * 4.0) / 1_000_000;
+            db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd,0)+? WHERE orden_compra=?`)
+              .run(triageCostUsd, folderName);
           }
           if (pendingMoveId !== null && graphMoveOk) completePendingMove(db, pendingMoveId);
         } catch { /* DB might not exist yet */ }
@@ -667,7 +670,7 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
         break; // un solo pedido por llamada
       } catch (e) {
         result.errores++;
-        result.detalles.push(`ERROR en mensaje: ${String(e)}`);
+        result.detalles.push(`ERROR en mensaje: ${errToMsg(e)}`);
       }
     }
 
@@ -1079,6 +1082,9 @@ export async function run(): Promise<StepResult> {
               logPipeline(db, folderName, 0, "triage", "OK",
                 `adjuntos=${clasificados.length + otherAttachments.length}`,
                 triageResponse.inputTokens, triageResponse.outputTokens, TRIAGE_MODEL);
+              const triageCostUsd = (triageResponse.inputTokens * 0.80 + triageResponse.outputTokens * 4.0) / 1_000_000;
+              db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd,0)+? WHERE orden_compra=?`)
+                .run(triageCostUsd, folderName);
             }
             // Solo completar el pending_move si el move IMAP ocurrió realmente.
             // Si falló, queda PENDING para que recoverPendingMoves lo reintente.
