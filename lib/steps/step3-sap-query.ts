@@ -56,7 +56,8 @@ async function queryCatNum(
 async function fetchCatNumMappings(
   sap: SapGateway,
   cardCode: string,
-  catNums: string[]
+  catNums: string[],
+  onItemError?: (catNum: string, err: unknown) => void
 ): Promise<Map<string, string>> {
   const mapping = new Map<string, string>();
   const escapedCard = cardCode.replace(/'/g, "''");
@@ -70,8 +71,9 @@ async function fetchCatNumMappings(
         try {
           const itemCode = await queryCatNum(sap, escapedCard, catNum);
           if (itemCode) mapping.set(catNum, itemCode);
-        } catch (err: any) {
-          throw new Error(`Error consultando SAP para el artículo ${catNum}: ${err.message || String(err)}`);
+        } catch (err) {
+          // Error en un artículo individual: excluir sin cancelar la orden completa
+          onItemError?.(catNum, err);
         }
       })
     );
@@ -131,7 +133,13 @@ export async function run(): Promise<StepResult> {
 
     try {
       const allCatNums = [...new Set(aiData.DocumentLines.map(l => l.SupplierCatNum))];
-      const itemMappings = await fetchCatNumMappings(sap, aiData.CardCode, allCatNums);
+      const itemMappings = await fetchCatNumMappings(sap, aiData.CardCode, allCatNums,
+        (catNum, err) => {
+          logPipeline(db, oc, 3, "sap_catalog", "WARN",
+            `Error SAP consultando ${catNum} — excluido: ${errToMsg(err).slice(0, 500)}`);
+          result.detalles.push(`  ⚠ OC ${oc}: artículo ${catNum} excluido (error SAP al consultar)`);
+        }
+      );
 
       const missing = aiData.DocumentLines.filter(l => !itemMappings.has(l.SupplierCatNum));
       const present = aiData.DocumentLines.filter(l =>  itemMappings.has(l.SupplierCatNum));

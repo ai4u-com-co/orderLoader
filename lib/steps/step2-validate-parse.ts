@@ -36,7 +36,7 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
   if (!cardCodeRegex.test(order.CardCode ?? ""))
     errores.push(`CardCode inválido: '${order.CardCode}' (debe ser ${cardCodePrefix} seguido de dígitos)`);
   const numAtCardTrimmed = (order.NumAtCard ?? "").trim();
-  if (numAtCardTrimmed.length === 0 || numAtCardTrimmed.length > 100)
+  if (numAtCardTrimmed.length < 3 || numAtCardTrimmed.length > 100)
     errores.push(`NumAtCard inválido: '${order.NumAtCard}'`);
 
   // Fechas YYYYMMDD
