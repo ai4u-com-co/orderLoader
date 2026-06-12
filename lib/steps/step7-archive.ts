@@ -92,8 +92,8 @@ type MoveJob = {
  */
 function collectStagingUids(
   pedidosRawDir: string
-): Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string; graphMessageId?: string }[]> {
-  const byOC = new Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string; graphMessageId?: string }[]>();
+): Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string; graphMessageId?: string; carpetaPath: string }[]> {
+  const byOC = new Map<string, { uid: number; messageId?: string; hasExtraFiles: boolean; source: string; graphMessageId?: string; carpetaPath: string }[]>();
   if (!fs.existsSync(pedidosRawDir)) return byOC;
 
   for (const cliente of fs.readdirSync(pedidosRawDir)) {
@@ -102,6 +102,7 @@ function collectStagingUids(
     for (const carpeta of fs.readdirSync(clienteDir)) {
       const carpetaPath = path.join(clienteDir, carpeta);
       if (!fs.statSync(carpetaPath).isDirectory()) continue;
+      if (fs.existsSync(path.join(carpetaPath, ".archived"))) continue;
       const metaPath = path.join(carpetaPath, "correo_metadata.json");
       if (!fs.existsSync(metaPath)) continue;
       try {
@@ -137,7 +138,7 @@ function collectStagingUids(
 
         for (const oc of ocs) {
           const list = byOC.get(oc) ?? [];
-          list.push({ uid, messageId, hasExtraFiles, source, graphMessageId });
+          list.push({ uid, messageId, hasExtraFiles, source, graphMessageId, carpetaPath });
           byOC.set(oc, list);
         }
       } catch { /* skip */ }
@@ -383,6 +384,12 @@ export async function run(): Promise<StepResult> {
           await moveInGraph(config, orphanJobs, result.detalles);
         } else {
           await moveInImap(config, orphanJobs, result.detalles);
+        }
+        // Marcar carpetas como archivadas para no reintentarlas en runs futuros
+        for (const [, entries] of stagingByOC.entries()) {
+          for (const { carpetaPath } of entries) {
+            try { fs.writeFileSync(path.join(carpetaPath, ".archived"), ""); } catch { /* skip */ }
+          }
         }
         result.detalles.push(`✓ ${orphanJobs.length} correo(s) huérfano(s) archivados`);
         result.saltados += orphanJobs.length;
