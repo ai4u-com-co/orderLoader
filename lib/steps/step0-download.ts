@@ -592,8 +592,13 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
         const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
         fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
 
+        const approvedPdfNames = new Set(approvedPdfs.map(p => p.filename));
         for (const att of [...pdfAttachments, ...otherAttachments]) {
           fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+          // PDFs no aprobados por triage → skip marker para que step1 no los parsee como OC
+          if (att.filename.toLowerCase().endsWith(".pdf") && !approvedPdfNames.has(att.filename)) {
+            fs.writeFileSync(path.join(pedidoPath, `${att.filename}.skip`), "extra-file");
+          }
         }
 
         const approvedNames = approvedPdfs.map(p => p.filename).join(", ");
@@ -1003,9 +1008,13 @@ export async function run(): Promise<StepResult> {
           const bodyText = `De: ${sender}\nAsunto: ${subject}\nFecha: ${dateHeader}\n\n${parsedText}`;
           fs.writeFileSync(path.join(pedidoPath, "correo_original.txt"), bodyText, "utf8");
 
-          // Guardar todos los adjuntos — step1 ignora los no aprobados con su propio detectClientFromPdf
+          // Guardar todos los adjuntos; PDFs no aprobados reciben .skip para que step1 no los parsee
+          const approvedPdfNamesImap = new Set(approvedPdfs.map(p => p.filename));
           for (const att of [...pdfAttachments, ...otherAttachments]) {
             fs.writeFileSync(path.join(pedidoPath, att.filename), att.content);
+            if (att.filename.toLowerCase().endsWith(".pdf") && !approvedPdfNamesImap.has(att.filename)) {
+              fs.writeFileSync(path.join(pedidoPath, `${att.filename}.skip`), "extra-file");
+            }
           }
 
           const approvedNames = approvedPdfs.map(p => p.filename).join(", ");
