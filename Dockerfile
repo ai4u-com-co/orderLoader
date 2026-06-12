@@ -11,7 +11,8 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Instalar dependencias puras (incluyendo devDependencies para el build)
-RUN npm ci
+# --mount=type=cache evita que el cache npm ocupe espacio del overlay filesystem del builder
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Copiar resto del código fuente del proyecto
 COPY . .
@@ -20,7 +21,8 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Compilar Next.js (esto generará .next/standalone si lo configuramos en next.config.ts)
-RUN npm run build
+# --mount=type=tmpfs evita que el cache de Next.js ocupe espacio del overlay durante el build
+RUN --mount=type=tmpfs,target=/app/.next/cache npm run build
 
 # Stage 2: Imagen de producción mínima
 FROM node:20-alpine AS runner
