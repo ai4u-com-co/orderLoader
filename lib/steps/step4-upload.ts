@@ -28,6 +28,17 @@ function yyyymmddToIso(d: string): string {
   return d;
 }
 
+// SAP B1 requiere tasa de cambio para el DocDate. Los fines de semana
+// no se configura tasa USD → ajustamos al último viernes hábil.
+function lastBusinessDay(yyyymmdd: string): string {
+  const iso = yyyymmddToIso(yyyymmdd);
+  const d = new Date(iso);
+  const day = d.getUTCDay(); // 0=Dom, 6=Sáb
+  if (day === 6) d.setUTCDate(d.getUTCDate() - 1);
+  else if (day === 0) d.setUTCDate(d.getUTCDate() - 2);
+  return d.toISOString().slice(0, 10);
+}
+
 function maxFechaLineas(lines: { DeliveryDate?: string }[], fallback: string): string {
   const fechas = lines.map(l => l.DeliveryDate ?? fallback).filter(f => /^\d{8}$/.test(f));
   return fechas.length ? fechas.reduce((max, f) => (f > max ? f : max), fechas[0]) : fallback;
@@ -169,7 +180,7 @@ export async function run(): Promise<StepResult> {
       const payload = {
         CardCode:   aiData.CardCode,
         NumAtCard:  aiData.NumAtCard,
-        DocDate:    yyyymmddToIso(aiData.DocDate),
+        DocDate:    lastBusinessDay(aiData.DocDate),
         DocDueDate: yyyymmddToIso(maxFechaLineas(lineas, aiData.DocDueDate)),
         TaxDate:    yyyymmddToIso(aiData.TaxDate),
         Comments:   (aiData.Comments ?? "").slice(0, 250),
