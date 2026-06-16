@@ -9,7 +9,6 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { CLIENT_NITS } from "./pdf-classify";
 import { withAnthropicRetry } from "./anthropic-retry";
 
 export type AttachmentTipo = 'orden_compra' | 'firma_logo' | 'documento_relevante' | 'desconocido';
@@ -69,7 +68,7 @@ export interface TriageResponse {
 
 export async function triageEmailAttachments(
   attachments: AttachmentForTriage[],
-  clientNits: ClientNitList = CLIENT_NITS,
+  clientNits: ClientNitList = [],
   emailSubject?: string,
   companyName = "la empresa receptora",
 ): Promise<TriageResponse | null> {

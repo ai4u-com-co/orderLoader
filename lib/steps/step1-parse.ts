@@ -13,7 +13,7 @@ import { getDb, logPipeline, errToMsg } from "../db";
 import { OrderStatus } from "../constants";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
-import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb } from "../pdf-classify";
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
@@ -219,10 +219,10 @@ export async function run(): Promise<StepResult> {
 
   const db = getDb();
 
-  // Cargar clientes y prompts desde DB; fallback a hardcoded si tabla vacía
+  // Cargar clientes y prompts desde la DB (única fuente). Sin clientes → listas vacías.
   let clientesDb: Array<{ carpeta: string; nombre: string; prompt: string }> = [];
-  let clientNits = CLIENT_NITS;
-  let clientKeywords = CLIENT_TEXT_KEYWORDS;
+  let clientNits: Array<{ carpeta: string; nits: string[] }> = [];
+  let clientKeywords: Array<{ carpeta: string; keywords: string[] }> = [];
   try {
     const rows = getClientes(db);
     if (rows.length > 0) {

@@ -25,7 +25,7 @@ import {
   getDb, logPipeline, errToMsg, ensureWorkspaceDirs,
   insertPendingMove, completePendingMove, failPendingMove, getPendingMoves,
 } from "../db";
-import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
+import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb } from "../pdf-classify";
 import { triageEmailAttachments, prepareImageForTriage, TRIAGE_MODEL, type AttachmentForTriage, type TriageResult } from "../ai-triage";
 
 export interface StepResult {
@@ -100,7 +100,7 @@ async function ejecutarTriageIA(
   clasificados: PdfClassification[],
   otherAttachments: AttachmentInfo[],
   pdfTexts: Map<string, string>,
-  clientNits: Array<{ carpeta: string; nits: string[] }> = CLIENT_NITS,
+  clientNits: Array<{ carpeta: string; nits: string[] }> = [],
   emailSubject?: string,
   companyName = "la empresa receptora",
 ): Promise<{ results: TriageResult[]; inputTokens: number; outputTokens: number } | null> {
@@ -349,8 +349,8 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
     return result;
   }
 
-  let clientNits = CLIENT_NITS;
-  let clientKeywords = CLIENT_TEXT_KEYWORDS;
+  let clientNits: Array<{ carpeta: string; nits: string[] }> = [];
+  let clientKeywords: Array<{ carpeta: string; keywords: string[] }> = [];
   try {
     const lists = loadClientListsFromDb(getDb());
     if (lists.nits.length > 0) { clientNits = lists.nits; clientKeywords = lists.keywords; }
@@ -703,8 +703,8 @@ export async function run(): Promise<StepResult> {
   }
 
   // Cargar clientes desde DB; fallback a hardcoded si DB no disponible
-  let clientNits = CLIENT_NITS;
-  let clientKeywords = CLIENT_TEXT_KEYWORDS;
+  let clientNits: Array<{ carpeta: string; nits: string[] }> = [];
+  let clientKeywords: Array<{ carpeta: string; keywords: string[] }> = [];
   try {
     const lists = loadClientListsFromDb(getDb());
     if (lists.nits.length > 0) { clientNits = lists.nits; clientKeywords = lists.keywords; }
