@@ -6,29 +6,10 @@
  */
 
 // ── Detección de empresa receptora ────────────────────────────────────────────
-//
-// FALLBACK TEMPORAL (Fase 2): las palabras clave de la empresa receptora deben venir
-// de la env var RECEPTOR_KEYWORDS (ver lib/config.ts). Estas constantes solo se usan
-// como respaldo mientras los .env de los VMs no estén poblados.
-// TODO (Fase 2c): eliminar estas constantes una vez que cada VM defina RECEPTOR_KEYWORDS.
+// Las palabras clave de la empresa receptora vienen de la env var RECEPTOR_KEYWORDS
+// (ver lib/config.ts → config.receptorKeywords). No hay listas por tenant en código.
 
-export const TAMAPRINT_RECEPTOR_KEYWORDS = [
-  "tamaprint",
-  "tama print",
-  "900851655",   // NIT sin dígito de verificación
-  "9008516551",  // NIT con dígito de verificación
-  "900.851.655", // NIT con puntos
-];
-
-export const FLEXO_RECEPTOR_KEYWORDS = [
-  "flexo impresos",
-  "flexoimpresos",
-  "900528680",   // NIT sin dígito de verificación
-  "9005286800",  // NIT con dígito de verificación
-  "900.528.680", // NIT con puntos
-];
-
-/** Genérica: verifica si el PDF está dirigido a la empresa cuyas keywords se pasan. */
+/** Verifica si el PDF está dirigido a la empresa cuyas keywords se pasan. */
 export function esDirigidoAEmpresa(pdfText: string, keywords: string[]): boolean {
   const lower = pdfText.toLowerCase();
   return keywords.some(kw => lower.includes(kw.toLowerCase()));

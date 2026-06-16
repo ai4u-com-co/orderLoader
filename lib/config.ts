@@ -1,14 +1,11 @@
 import path from "path";
-import { TAMAPRINT_RECEPTOR_KEYWORDS, FLEXO_RECEPTOR_KEYWORDS } from "./pdf-classify";
 
 export type EmailProvider = "imap" | "microsoft";
-export type Tenant = "tamaprint" | "flexoimpresos";
-
-// Per-tenant static config — add new tenants here only
-const TENANT_META: Record<Tenant, { displayName: string; receptorKeywords: string[]; cardCodePrefix: string }> = {
-  tamaprint:     { displayName: "Tamaprint",     receptorKeywords: TAMAPRINT_RECEPTOR_KEYWORDS, cardCodePrefix: "CN" },
-  flexoimpresos: { displayName: "Flexo Impresos", receptorKeywords: FLEXO_RECEPTOR_KEYWORDS,    cardCodePrefix: "C"  },
-};
+// El tenant es un identificador opaco configurado por env (sin lista cerrada en código):
+// rotula logs/correos y rutea el backend SAP (/api/v1/<tenant>/...). Toda la identidad
+// del tenant (display name, prefijo de CardCode, keywords de empresa receptora) viene de
+// variables de entorno — no hay datos de tenants específicos hardcodeados aquí.
+export type Tenant = string;
 
 export interface Config {
   // Paths
@@ -68,9 +65,13 @@ export interface Config {
 
 const REQUIRED_ENV_BASE: [string, string][] = [
   // CRON_SECRET ya no se usa: el dashboard opera sin auth (sin passwords) en el VM.
-  ["EMAIL_USER",        "buzón de correo (mailbox)"],
-  ["NOTIFY_EMAIL",      "envío de notificaciones"],
-  ["ANTHROPIC_API_KEY", "extracción AI de PDFs"],
+  ["EMAIL_USER",         "buzón de correo (mailbox)"],
+  ["NOTIFY_EMAIL",       "envío de notificaciones"],
+  ["ANTHROPIC_API_KEY",  "extracción AI de PDFs"],
+  // Identidad del tenant (sin defaults hardcodeados): cada instancia debe declararla.
+  ["TENANT",             "identificador del tenant (ruteo backend SAP + etiqueta)"],
+  ["CARD_CODE_PREFIX",   "prefijo del CardCode SAP del tenant (ej. CN, C)"],
+  ["RECEPTOR_KEYWORDS",  "palabras/NIT de la empresa receptora (lista separada por comas)"],
 ];
 
 const REQUIRED_ENV_SAP_DIRECT: [string, string][] = [
@@ -163,25 +164,13 @@ export function getConfig(): Config {
     sapBackendUrl: (process.env.SAP_BACKEND_URL ?? "").replace(/\/$/, ""),
     sapBackendApiKey: process.env.SAP_BACKEND_API_KEY ?? "",
 
-    // `tenant` es un identificador de ruteo real (lo usa el backend SAP centralizado en
-    // /api/v1/<tenant>/...), no solo una etiqueta — su valor NO debe cambiarse aquí.
-    tenant: (process.env.TENANT ?? "tamaprint") as Tenant,
-    ...((): Pick<Config, "tenantDisplayName" | "receptorKeywords" | "cardCodePrefix"> => {
-      // Fase 2: la identidad del tenant se configura por env vars.
-      // TENANT_META es un FALLBACK TEMPORAL para no romper los VMs que aún no tienen
-      // las env vars seteadas. TODO (Fase 2c): eliminar TENANT_META y las constantes
-      // *_RECEPTOR_KEYWORDS una vez que el .env de cada VM defina TENANT_DISPLAY_NAME,
-      // CARD_CODE_PREFIX y RECEPTOR_KEYWORDS.
-      const t = (process.env.TENANT ?? "tamaprint") as Tenant;
-      const fallback = TENANT_META[t] ?? TENANT_META["tamaprint"];
-      const envKeywords = process.env.RECEPTOR_KEYWORDS
-        ?.split(",").map(k => k.trim()).filter(Boolean);
-      return {
-        tenantDisplayName: process.env.TENANT_DISPLAY_NAME ?? fallback.displayName,
-        receptorKeywords:  envKeywords?.length ? envKeywords : fallback.receptorKeywords,
-        cardCodePrefix:    process.env.CARD_CODE_PREFIX ?? fallback.cardCodePrefix,
-      };
-    })(),
+    // Identidad del tenant, 100% desde env (TENANT, CARD_CODE_PREFIX y RECEPTOR_KEYWORDS
+    // son requeridos — ver validateEnv). `tenant` además rutea el backend SAP.
+    tenant: process.env.TENANT as Tenant,
+    tenantDisplayName: process.env.TENANT_DISPLAY_NAME || (process.env.TENANT ?? "OrderLoader"),
+    receptorKeywords: (process.env.RECEPTOR_KEYWORDS ?? "")
+      .split(",").map(k => k.trim()).filter(Boolean),
+    cardCodePrefix: process.env.CARD_CODE_PREFIX ?? "",
     stagingFolderName:      process.env.STAGING_FOLDER_NAME        ?? "A A REVISAR IA",
     inboxFolderName:        process.env.INBOX_FOLDER_NAME          ?? "A B INGRESADO",
     diferenciasFolder:      process.env.DIFERENCIAS_FOLDER_NAME    ?? "A A REVISAR IA",
