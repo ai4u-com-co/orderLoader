@@ -8,6 +8,10 @@ services:
     container_name: orderloader
     restart: unless-stopped
     ports:
+      # Puerto 80 (estándar) además del 3000: redes/ISP que filtran puertos no
+      # estándar (ej. San Andrés) bloquean el 3000 pero dejan pasar el 80.
+      # Acceso: http://136.114.54.107 (sin :3000) o el viejo http://136.114.54.107:3000
+      - "80:3000"
       - "3000:3000"
     environment:
       # Carpeta donde la aplicación guardará DB y adjuntos según lib/config.ts
