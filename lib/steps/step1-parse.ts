@@ -380,6 +380,29 @@ export async function run(): Promise<StepResult> {
           // hace un pre-check (GET /Orders por NumAtCard+CardCode) antes de postear y, además,
           // SAP mismo rechaza una OC ya existente. El .done por carpeta evita el reproceso
           // accidental de la MISMA carpeta en corridas normales.
+          // Guard anti-colisión entre clientes: NumAtCard NO es único globalmente, dos
+          // clientes distintos podrían reutilizar el mismo número de OC. El INSERT OR REPLACE
+          // de insertSapOrder reemplaza por orden_compra, así que sobreescribiría el pedido
+          // del otro cliente. Si ya existe una fila con esta OC pero de OTRO nit_cliente, no
+          // es un reproceso legítimo (un reenvío siempre trae el mismo cliente): se deriva a
+          // revisión manual en lugar de pisar datos ajenos.
+          const prefixCfg = getConfig().cardCodePrefix;
+          const nitActual = order!.CardCode.startsWith(prefixCfg)
+            ? order!.CardCode.slice(prefixCfg.length) : order!.CardCode;
+          const colision = db.prepare(
+            `SELECT nit_cliente, cliente_nombre FROM pedidos_maestro WHERE orden_compra = ? AND nit_cliente <> ?`
+          ).get(order!.NumAtCard, nitActual) as { nit_cliente: string; cliente_nombre: string } | undefined;
+          if (colision) {
+            const msg = `Colisión de OC ${order!.NumAtCard}: ya existe para otro cliente (${colision.cliente_nombre}, NIT ${colision.nit_cliente}). Revisión manual.`;
+            registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, clienteInfo.nombre, msg);
+            fs.writeFileSync(doneMarker, order!.NumAtCard);
+            fs.rmSync(retriesPath, { force: true });
+            result.saltados++;
+            result.detalles.push(`  ⚠ ${msg}`);
+            logPipeline(db, order!.NumAtCard, 1, "parse", "ERROR", msg);
+            continue;
+          }
+
           const costoIaUsd = estimateCostUsd(PARSE_MODEL, usage.input ?? 0, usage.output ?? 0);
 
           const tx = db.transaction(() => {
