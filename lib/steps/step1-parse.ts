@@ -370,20 +370,16 @@ export async function run(): Promise<StepResult> {
             fs.copyFileSync(metaSrc, path.join(ocFolder, "correo_metadata.json"));
           }
 
-          // Si el pedido ya fue notificado o cerrado (descarga duplicada del mismo email),
-          // marcar esta carpeta como done sin sobreescribir el estado en la DB.
-          const existingRow = db.prepare(
-            `SELECT estado, notificacion_enviada FROM pedidos_maestro WHERE orden_compra = ?`
-          ).get(order!.NumAtCard) as { estado: string; notificacion_enviada: number } | undefined;
-          if (existingRow && (existingRow.notificacion_enviada === 1 || existingRow.estado === "CERRADO" || existingRow.estado === "NOTIFICADO")) {
-            fs.writeFileSync(doneMarker, order!.NumAtCard);
-            fs.rmSync(retriesPath, { force: true });
-            result.saltados++;
-            result.detalles.push(`  ↩ OC ${order!.NumAtCard} → ya procesada (${existingRow.estado}), carpeta duplicada omitida`);
-            logPipeline(db, order!.NumAtCard, 1, "parse", "OK", `Duplicado: orden ya procesada (${existingRow.estado})`);
-            continue;
-          }
-
+          // Reproceso intencional: el INBOX es la fuente de verdad. Si el cliente devuelve
+          // un correo a la bandeja de entrada, step0 lo descarga en una carpeta NUEVA (sin
+          // .done) y el pedido debe procesarse desde cero AUNQUE su OC ya esté CERRADA en la
+          // DB — típicamente porque la primera vez falló en SAP y el cliente lo reenvía para
+          // reintentar. NO se filtra aquí por estado previo.
+          //
+          // La protección contra pedidos duplicados en SAP NO depende de este step: step4
+          // hace un pre-check (GET /Orders por NumAtCard+CardCode) antes de postear y, además,
+          // SAP mismo rechaza una OC ya existente. El .done por carpeta evita el reproceso
+          // accidental de la MISMA carpeta en corridas normales.
           const costoIaUsd = estimateCostUsd(PARSE_MODEL, usage.input ?? 0, usage.output ?? 0);
 
           const tx = db.transaction(() => {
