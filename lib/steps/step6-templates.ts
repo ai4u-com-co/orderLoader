@@ -35,10 +35,13 @@ function statusColors(estado: string, esParcial: boolean) {
   return { bg: B.errorBg, text: B.errorText, border: B.errorBorder };
 }
 
+// Solo códigos SAP con un significado específico y estable. El -10 NO va aquí: es un
+// error genérico (catch-all) del Service Layer que SIEMPRE viene con un mensaje propio
+// indicando la causa real — al no estar en esta tabla, parseSapError extrae ese mensaje
+// del payload en vez de mostrar una etiqueta fija (antes decía "Sin autorización", falso).
 const SAP_ERROR_CODES: Record<string, string> = {
   "-1116": "Artículo sin precio en la lista de precios de SAP — pedido NO creado",
   "-8112": "Un campo del documento excede el límite de caracteres permitido por SAP — pedido NO creado",
-  "-10":   "Sin autorización en SAP — pedido NO creado",
 };
 
 function parseSapError(errorMsg: string): string {

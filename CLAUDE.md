@@ -3,8 +3,10 @@
 ## Core Commands
 - **Dev Server**: `npm run dev`
 - **Build**: `npm run build`
+- **Lint**: `npm run lint`
+- **Tests**: `npm test`
 - **Prod Mode (Docker)**: `docker compose up -d --build`
-- **Manual Pipeline**: `npx tsx scripts/cron-pipeline.ts`
+- **Manual Pipeline**: `curl -X POST http://localhost:3000/api/pipeline/run` (el cron del VM lo dispara igual)
 - **Calculate AI Costs**: `npx tsx scripts/calculate-costs.ts`
 
 ## Coding Standards
