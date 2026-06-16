@@ -15,6 +15,7 @@ import { getConfig } from "../config";
 import { getDb, logPipeline, errToMsg } from "../db";
 import { sendAlertEmail } from "../mailer";
 import { buildSubjectForOrder, buildHtmlForOrder } from "./step6-templates";
+import { OrderStatus } from "../constants";
 
 const LOGO_PATH = path.resolve(process.cwd(), "public/brand/logos/Export/Logo V1 - Naranja.png");
 
@@ -29,10 +30,11 @@ export interface StepResult {
 // pero aún no subidos a SAP). Notificarlo causaría falsos positivos cuando SAP está caído
 // y además cerraría el pedido antes de que step4 lo procese.
 const ESTADOS_A_NOTIFICAR = [
-  "VALIDADO", "SAP_MONTADO",
-  "ERROR_DUPLICADO", "ERROR_ITEMS", "ERROR_SAP", "ERROR_PARSE", "ERROR_VALIDACION", "ERROR_CATALOG",
-  "ERROR_REVISION_MANUAL",
-  "NOTIFICANDO",
+  OrderStatus.VALIDADO, OrderStatus.SAP_MONTADO,
+  OrderStatus.ERROR_DUPLICADO, OrderStatus.ERROR_ITEMS, OrderStatus.ERROR_SAP,
+  OrderStatus.ERROR_PARSE, OrderStatus.ERROR_VALIDACION, OrderStatus.ERROR_CATALOG,
+  OrderStatus.ERROR_REVISION_MANUAL,
+  OrderStatus.NOTIFICANDO,
 ] as const;
 
 export async function run(): Promise<StepResult> {

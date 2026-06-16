@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PipelineStatus from "./PipelineStatus";
-import { Button, Badge, cn } from "@/design-system";
+import { Button, cn } from "@/design-system";
 
 export interface Pedido {
   id: number;
@@ -117,7 +117,7 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
   function toggleOne(oc: string) {
     setSeleccionados(prev => {
       const n = new Set(prev);
-      n.has(oc) ? n.delete(oc) : n.add(oc);
+      if (n.has(oc)) n.delete(oc); else n.add(oc);
       return n;
     });
   }

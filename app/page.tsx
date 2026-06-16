@@ -6,6 +6,10 @@ import PedidoTable, { Pedido } from "@/components/PedidoTable";
 import RunPipelineButton from "@/components/RunPipelineButton";
 import PedidoDetail from "@/components/PedidoDetail";
 import { Logo, Text, Button, Card } from "@/design-system";
+import { TERMINAL_STATES, ERROR_STATES } from "@/lib/constants";
+
+// Estados finales: ni terminales ni de error necesitan auto-refresh.
+const ESTADOS_FINALES = new Set<string>([...TERMINAL_STATES, ...ERROR_STATES]);
 
 const STAT_CARDS = [
   { key: "total",    label: "Total",      color: "text-erie-black"    },
@@ -54,9 +58,7 @@ export default function Home() {
   }, [fetchPedidos]);
 
   useEffect(() => {
-    const hasPending = pedidos.some(p =>
-      !["CERRADO", "ERROR_DUPLICADO", "ERROR_ITEMS", "ERROR_SAP", "ERROR_PARSE", "ERROR_VALIDACION"].includes(p.estado)
-    );
+    const hasPending = pedidos.some(p => !ESTADOS_FINALES.has(p.estado));
     if (!hasPending) return;
     const id = setInterval(fetchPedidos, 15_000);
     return () => clearInterval(id);

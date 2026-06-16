@@ -1,9 +1,5 @@
 import { getDb } from "../lib/db";
-
-const PRICING: Record<string, { inputPer1M: number; outputPer1M: number; label: string }> = {
-  "claude-sonnet-4-6": { inputPer1M: 3.00,  outputPer1M: 15.00, label: "Sonnet 4.6 (extracción PDF)" },
-  "claude-haiku-4-5-20251001": { inputPer1M: 0.80, outputPer1M: 4.00,  label: "Haiku 4.5 (triage adjuntos)" },
-};
+import { PRICING, DEFAULT_PRICING } from "../lib/pricing";
 
 const TRM = 4200;
 
@@ -63,7 +59,7 @@ async function calculate() {
   let totalUsd = 0;
 
   for (const row of porModelo) {
-    const p = PRICING[row.modelo] ?? { inputPer1M: 3.0, outputPer1M: 15.0, label: row.modelo };
+    const p = PRICING[row.modelo] ?? { ...DEFAULT_PRICING, label: row.modelo };
     const costInput  = (row.input  / 1_000_000) * p.inputPer1M;
     const costOutput = (row.output / 1_000_000) * p.outputPer1M;
     const costTotal  = costInput + costOutput;

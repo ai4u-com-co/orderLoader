@@ -18,6 +18,8 @@ interface SapResponse {
   ok: boolean;
   status: number;
   headers: { get(name: string): string | null };
+  /** Array crudo de cabeceras Set-Cookie (sin unir) para parseo seguro. */
+  getSetCookie(): string[];
   text(): Promise<string>;
   json(): Promise<unknown>;
 }
@@ -68,11 +70,14 @@ export class SapB1Client {
       const text = await res.text();
       throw new Error(`SAP login failed ${res.status}: ${text}`);
     }
-    const setCookie = res.headers.get("set-cookie");
-    if (setCookie) {
-      this.cookies = setCookie
-        .split(",")
+    // Set-Cookie llega como array (una entrada por cookie). Tomar solo el par
+    // nombre=valor de cada una evita romper cuando un atributo contiene comas
+    // (ej. Expires=Wed, 09 Jun 2026 ...).
+    const setCookies = res.getSetCookie();
+    if (setCookies.length) {
+      this.cookies = setCookies
         .map((c) => c.split(";")[0].trim())
+        .filter(Boolean)
         .join("; ");
     }
   }
@@ -202,6 +207,10 @@ export class SapB1Client {
                   if (Array.isArray(val)) return val.join(", ");
                   return val ?? null;
                 },
+              },
+              getSetCookie(): string[] {
+                const sc = res.headers["set-cookie"];
+                return Array.isArray(sc) ? sc : sc ? [sc] : [];
               },
               text: async () => body,
               json: async () => JSON.parse(body),

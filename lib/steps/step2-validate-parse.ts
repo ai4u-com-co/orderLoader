@@ -11,10 +11,10 @@ import fs from "fs";
 import path from "path";
 import { getDb, logPipeline, errToMsg } from "../db";
 import { getConfig } from "../config";
-import { sendAlertEmail } from "../mailer";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
+import { odataString } from "../odata";
 
 export interface StepResult {
   procesados: number;
@@ -86,25 +86,6 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
   return errores;
 }
 
-
-function buildErrorHtml(oc: string, cliente: string, errores: string[]): string {
-  const filas = errores.map(e =>
-    `<tr style="background:#f8d7da"><td style="padding:6px 12px">❌</td><td style="padding:6px 12px">${e}</td></tr>`
-  ).join("");
-  return `<html><body style="font-family:Arial,sans-serif;font-size:13px">
-  <div style="background:#dc3545;color:white;padding:14px 20px;border-radius:6px 6px 0 0">
-    <h2 style="margin:0">Error de validación — OC ${oc} no será procesada</h2>
-  </div>
-  <div style="border:1px solid #ddd;padding:16px 20px">
-    <p><b>Cliente:</b> ${cliente}</p>
-    <table border="1" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:12px">
-      <thead style="background:#343a40;color:#fff">
-        <tr><th style="padding:8px"></th><th style="padding:8px;text-align:left">Problema</th></tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>
-  </div></body></html>`;
-}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -196,7 +177,7 @@ export async function run(): Promise<StepResult> {
     try {
       const res = await sap.get<{ value: Array<Record<string, unknown>> }>(
         "Orders",
-        { "$filter": `NumAtCard eq '${oc}' and CardCode eq '${order.CardCode}'`, "$select": "DocEntry,DocNum,DocTotal,CardCode" }
+        { "$filter": `NumAtCard eq ${odataString(oc)} and CardCode eq ${odataString(order.CardCode)}`, "$select": "DocEntry,DocNum,DocTotal,CardCode" }
       );
       const encontrados = res.value ?? [];
 

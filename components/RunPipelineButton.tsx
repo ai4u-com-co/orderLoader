@@ -176,7 +176,7 @@ export default function RunPipelineButton({ onComplete }: Props) {
   function toggleExpand(step: number) {
     setExpandedSteps(prev => {
       const next = new Set(prev);
-      next.has(step) ? next.delete(step) : next.add(step);
+      if (next.has(step)) next.delete(step); else next.add(step);
       return next;
     });
   }

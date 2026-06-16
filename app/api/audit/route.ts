@@ -4,8 +4,13 @@ import { getDb } from "@/lib/db";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const limit  = Math.min(parseInt(searchParams.get("limit")  ?? "100"), 500);
-    const offset = parseInt(searchParams.get("offset") ?? "0");
+    // Parsing robusto: un query param no numérico no debe llegar como NaN al binding SQLite.
+    const toInt = (v: string | null, fallback: number): number => {
+      const n = parseInt(v ?? "", 10);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    };
+    const limit  = Math.min(toInt(searchParams.get("limit"), 100), 500);
+    const offset = toInt(searchParams.get("offset"), 0);
     const oc     = searchParams.get("oc"); // filtrar por orden de compra
 
     const db = getDb();

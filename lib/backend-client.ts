@@ -4,6 +4,19 @@ import { getLogger } from "./logger";
 const log = getLogger("backend-client");
 
 const BACKEND_TIMEOUT_MS = 30_000;
+const RETRY_DELAYS_MS = [1_000, 3_000];
+
+/** Reintenta solo errores transitorios: timeouts, fallos de red y 5xx del backend. */
+function isRetryableBackendError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Backend timeout") ||
+    msg.includes("fetch failed") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    /→ 5\d\d:/.test(msg)
+  );
+}
 
 // Maps SAP entity names used in steps → backend URL paths
 const ENTITY_MAP: Record<string, string> = {
@@ -69,6 +82,25 @@ export class SapBackendClient {
   async logout(): Promise<void> {}
 
   private async _request<T>(method: string, url: string, body?: unknown): Promise<T> {
+    let lastError!: unknown;
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        return await this._requestOnce<T>(method, url, body);
+      } catch (e) {
+        lastError = e;
+        if (attempt < RETRY_DELAYS_MS.length && isRetryableBackendError(e)) {
+          const delay = RETRY_DELAYS_MS[attempt];
+          log.warn({ attempt: attempt + 1, delay, url }, "Backend request falló, reintentando");
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          throw lastError;
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  private async _requestOnce<T>(method: string, url: string, body?: unknown): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
@@ -99,7 +131,7 @@ export class SapBackendClient {
       return res.json() as Promise<T>;
     } catch (e: any) {
       if (e.name === "AbortError") {
-        throw new Error(`Backend timeout (${BACKEND_TIMEOUT_MS}ms): ${url}`);
+        throw new Error(`Backend timeout (${BACKEND_TIMEOUT_MS}ms): ${url}`, { cause: e });
       }
       throw e;
     } finally {

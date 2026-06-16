@@ -71,7 +71,7 @@ export async function triageEmailAttachments(
   attachments: AttachmentForTriage[],
   clientNits: ClientNitList = CLIENT_NITS,
   emailSubject?: string,
-  companyName = "Tamaprint",
+  companyName = "la empresa receptora",
 ): Promise<TriageResponse | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;

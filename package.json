@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
     "pull-db": "bash scripts/pull-db.sh",
     "publish:changelog": "tsx scripts/publish-changelog.ts",
     "type-check": "tsc --noEmit"
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@ai4u-labs/changelog-client": "^0.3.0",
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
@@ -40,9 +42,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.5.0",
+    "globals": "^17.6.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.0",
     "typescript": "^5",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.4"
   }
 }

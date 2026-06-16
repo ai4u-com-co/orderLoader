@@ -17,7 +17,8 @@ export const DocumentLineSchema = z.object({
 export const SapB1OrderSchema = z.object({
   DocType: z.literal("dDocument_Items"),
   NumAtCard: z.string().min(1, "NumAtCard (Orden de Compra) es obligatorio"),
-  // Tamaprint usa "CN{NIT}", FlexoImpresos usa "C{NIT}" — ambos comienzan con "C"
+  // El CardCode usa el prefijo configurable del tenant (CARD_CODE_PREFIX) seguido del NIT;
+  // por convención siempre empieza por "C".
   CardCode: z.string().startsWith("C", "CardCode debe empezar por 'C'"),
   DocDate: z.string().regex(/^\d{8}$/, "DocDate debe tener formato YYYYMMDD"),
   DocDueDate: z.string().regex(/^\d{8}$/, "DocDueDate debe tener formato YYYYMMDD"),

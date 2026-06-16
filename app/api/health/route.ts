@@ -18,8 +18,10 @@ export async function GET(req: NextRequest) {
   try {
     const db = getDb();
     dbCount = (db.prepare("SELECT COUNT(*) as c FROM pedidos_maestro").get() as { c: number }).c;
+    // 'download' es la primera fase que se loguea en cada corrida (step0). Nunca se
+    // loguea fase_nombre='pipeline' — usar 'pipeline' dejaba last_run/missed_cron en null.
     const row = db
-      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'pipeline'`)
+      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'download'`)
       .get() as { last: string | null };
     lastPipelineRun = row?.last ?? null;
     if (lastPipelineRun) {

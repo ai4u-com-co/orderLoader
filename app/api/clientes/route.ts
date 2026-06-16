@@ -4,11 +4,16 @@ import { getConfig } from "@/lib/config";
 
 export async function GET() {
   try {
+    const safeParseArray = (json: string): string[] => {
+      try { const v = JSON.parse(json); return Array.isArray(v) ? v : []; }
+      catch { return []; }
+    };
     const db = getDb();
+    // JSON corrupto en un cliente no debe tumbar toda la lista.
     const clientes = getClientes(db).map(c => ({
       ...c,
-      nits:     JSON.parse(c.nits_json)     as string[],
-      keywords: JSON.parse(c.keywords_json) as string[],
+      nits:     safeParseArray(c.nits_json),
+      keywords: safeParseArray(c.keywords_json),
     }));
     const { cardCodePrefix } = getConfig();
     return NextResponse.json({ ok: true, clientes, cardCodePrefix });

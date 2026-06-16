@@ -12,7 +12,7 @@ import { run as step4 } from "./steps/step4-upload";
 import { run as step5 } from "./steps/step5-reconcile";
 import { run as step6 } from "./steps/step6-notify";
 import { run as step7 } from "./steps/step7-archive";
-import { clearSapClient, logoutSapClient } from "./sap-client";
+import { logoutSapClient } from "./sap-client";
 
 export interface StepResult {
   step: number;

@@ -3,9 +3,9 @@
  *
  * Protocolo de clasificación (fuente de verdad: contenido del PDF):
  *   1. Asunto contiene "[OrderLoader]"  → notificación propia, se deja en INBOX
- *   2. Ningún adjunto PDF               → A A SANDRA
- *   3. Ningún PDF es OC de cliente aprobado dirigido a Tamaprint → A A SANDRA
- *   4. Hay PDFs aprobados + otros archivos → procesa los aprobados, correo a A A SANDRA
+ *   2. Ningún adjunto PDF               → carpeta de revisión manual
+ *   3. Ningún PDF es OC de cliente aprobado dirigido a la empresa receptora → revisión manual
+ *   4. Hay PDFs aprobados + otros archivos → procesa los aprobados, correo a revisión manual
  *   5. Solo PDFs aprobados              → pipeline normal (A A REVISAR IA → step7 decide final)
  *
  * Default pesimista: todo correo con OC va primero a "A A REVISAR IA".
@@ -62,7 +62,6 @@ async function clasificarPdfs(
   receptorKeywords: string[],
   textsOut?: Map<string, string>
 ): Promise<PdfClassification[]> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
   const results: PdfClassification[] = [];
   for (const pdf of pdfs) {
@@ -103,7 +102,7 @@ async function ejecutarTriageIA(
   pdfTexts: Map<string, string>,
   clientNits: Array<{ carpeta: string; nits: string[] }> = CLIENT_NITS,
   emailSubject?: string,
-  companyName = "Tamaprint",
+  companyName = "la empresa receptora",
 ): Promise<{ results: TriageResult[]; inputTokens: number; outputTokens: number } | null> {
   const attachments: AttachmentForTriage[] = [];
 
@@ -202,7 +201,7 @@ function registerManualReviewInDb(
   carpetaPath: string,
   folderName: string,
   sender: string,
-  subject: string,
+  _subject: string,
   errorMsg: string
 ): string {
   const now = new Date().toISOString();
@@ -655,12 +654,12 @@ async function runMicrosoft(config: ReturnType<typeof getConfig>): Promise<StepR
           logPipeline(db, folderName, 0, "download", "OK",
             `Graph cliente=${client_folder} PDFs_OC=${approvedPdfs.length} extras=${hasExtraFiles}`);
           if (triageResponse) {
+            // El costo del triage queda en pipeline_log (nivel correo): un correo puede
+            // contener varias OC, así que no se puede atribuir a una orden_compra única.
+            // calculate-costs.ts lo suma desde pipeline_log por fase_nombre='triage'.
             logPipeline(db, folderName, 0, "triage", "OK",
               `adjuntos=${clasificados.length + otherAttachments.length}`,
               triageResponse.inputTokens, triageResponse.outputTokens, TRIAGE_MODEL);
-            const triageCostUsd = (triageResponse.inputTokens * 0.80 + triageResponse.outputTokens * 4.0) / 1_000_000;
-            db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd,0)+? WHERE orden_compra=?`)
-              .run(triageCostUsd, folderName);
           }
           if (pendingMoveId !== null && graphMoveOk) completePendingMove(db, pendingMoveId);
         } catch { /* DB might not exist yet */ }
@@ -756,8 +755,8 @@ export async function run(): Promise<StepResult> {
           const dateHeader = envelope?.date?.toISOString() ?? new Date().toISOString();
 
           // ── 1. Notificación propia de OrderLoader → dejar en INBOX ────────────
-          // Verificar tanto asunto como remitente: los correos CC enviados desde
-          // pedidos@tamaprint.com al mismo buzón no tienen [OrderLoader] siempre visible.
+          // Verificar tanto asunto como remitente: los correos CC enviados desde el
+          // propio buzón de notificaciones no siempre traen [OrderLoader] visible.
           const isOwnNotification = subject.includes("[OrderLoader]") ||
             sender.toLowerCase() === config.emailUser.toLowerCase();
           if (isOwnNotification) {
@@ -871,7 +870,7 @@ export async function run(): Promise<StepResult> {
             const ia = triageResults?.find(r => r.filename === pdf.filename);
             if (!ia) return pdf;
 
-            // NIT match: la IA puede ELEVAR isApprovedOC si isTamaprint fue false
+            // NIT match: la IA puede ELEVAR isApprovedOC si la detección de empresa receptora fue false
             if (pdf.detectionMethod === 'nit') {
               if (!pdf.isApprovedOC && ia.tipo === 'orden_compra') {
                 return { ...pdf, isApprovedOC: true };
@@ -1088,12 +1087,12 @@ export async function run(): Promise<StepResult> {
             logPipeline(db, folderName, 0, "download", "OK",
               `UID=${storedUid} cliente=${client_folder} PDFs_OC=${approvedPdfs.length} extras=${hasExtraFiles}`);
             if (triageResponse) {
+              // El costo del triage queda en pipeline_log (nivel correo): un correo puede
+              // contener varias OC, así que no se puede atribuir a una orden_compra única.
+              // calculate-costs.ts lo suma desde pipeline_log por fase_nombre='triage'.
               logPipeline(db, folderName, 0, "triage", "OK",
                 `adjuntos=${clasificados.length + otherAttachments.length}`,
                 triageResponse.inputTokens, triageResponse.outputTokens, TRIAGE_MODEL);
-              const triageCostUsd = (triageResponse.inputTokens * 0.80 + triageResponse.outputTokens * 4.0) / 1_000_000;
-              db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd,0)+? WHERE orden_compra=?`)
-                .run(triageCostUsd, folderName);
             }
             // Solo completar el pending_move si el move IMAP ocurrió realmente.
             // Si falló, queda PENDING para que recoverPendingMoves lo reintente.

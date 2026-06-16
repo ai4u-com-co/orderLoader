@@ -15,6 +15,7 @@ import { getDb, logPipeline } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
+import { odataString } from "../odata";
 
 export interface StepResult {
   procesados: number;
@@ -129,10 +130,9 @@ export async function run(): Promise<StepResult> {
 
     // ── Verificación de idempotencia: ¿ya fue subida a SAP en un run anterior? ─
     try {
-      const safeCardCode = String(aiData.CardCode ?? "").replace(/'/g, "''")
       const check = await sap.get<{ value: Array<Record<string, unknown>> }>(
         "Orders",
-        { "$filter": `NumAtCard eq '${oc}' and CardCode eq '${safeCardCode}'`, "$select": "DocEntry,DocNum" }
+        { "$filter": `NumAtCard eq ${odataString(oc)} and CardCode eq ${odataString(String(aiData.CardCode ?? ""))}`, "$select": "DocEntry,DocNum" }
       );
       if (check.value?.length > 0) {
         const existing = check.value[0];
@@ -155,7 +155,7 @@ export async function run(): Promise<StepResult> {
     // ── Leer artículos excluidos por step3 (catálogo) ───────────────────────
     const catalogExcluded: string[] = JSON.parse(String(row.items_excluidos || "[]"));
 
-    let lineas = aiData.DocumentLines
+    const lineas = aiData.DocumentLines
       .filter(l => !catalogExcluded.includes(l.SupplierCatNum))
       .map(l => ({ ...l }));
     const excluidos = aiData.DocumentLines

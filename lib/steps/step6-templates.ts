@@ -245,7 +245,9 @@ function buildPreciosHtml(db: Database.Database, rows: Array<Record<string, unkn
     try {
       const v = JSON.parse(String(row.validacion_resultado ?? "{}")) as { diferencias?: Array<{ campo: string; sap: number }> };
       for (const d of v.diferencias ?? []) {
-        const m = d.campo.match(/^Precio \[(.+)\]$/);
+        // step5 emite "Precio unitario [SKU]" y "Precio neto/descuento [SKU]"
+        // (antes era "Precio [SKU]") — matchear cualquier variante de precio.
+        const m = d.campo.match(/^Precio[^[]*\[(.+)\]$/);
         if (m) preciosMalos.set(m[1], Number(d.sap));
       }
     } catch { /* ignore */ }
@@ -372,7 +374,7 @@ export function buildSubjectForOrder(row: Record<string, unknown>, hasExtraFiles
   const isMailOnly = oc.startsWith("MAIL_");
   const ocLabel = isMailOnly ? "Correo recibido" : `OC ${oc}`;
 
-  let estadoLabel = estado;
+  let estadoLabel: string;
   if (estado === "ERROR_REVISION_MANUAL") {
     estadoLabel = "REVISIÓN MANUAL";
   } else {
@@ -400,8 +402,9 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
 
   const config = getConfig();
   const destFolder = predictDestFolder(row, hasExtraFiles, config);
-  const destFolderColor = destFolder === "A B INGRESADO" ? B.successText : B.warnText;
-  const destFolderBg    = destFolder === "A B INGRESADO" ? B.successBg   : B.warnBg;
+  const esIngresado     = destFolder === config.inboxFolderName;
+  const destFolderColor = esIngresado ? B.successText : B.warnText;
+  const destFolderBg    = esIngresado ? B.successBg   : B.warnBg;
   const emailFolderInfo = `
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px">
   <tr>

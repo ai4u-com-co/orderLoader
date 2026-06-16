@@ -158,7 +158,7 @@ export async function getMessageWithAttachments(
 ): Promise<GraphMessage & { attachments: GraphFileAttachment[] }> {
   return (await gGet(
     token,
-    `/users/${encodeURIComponent(userEmail)}/messages/${messageId}?$expand=attachments`
+    `/users/${encodeURIComponent(userEmail)}/messages/${encodeURIComponent(messageId)}?$expand=attachments`
   )) as GraphMessage & { attachments: GraphFileAttachment[] };
 }
 
@@ -171,7 +171,7 @@ export async function moveMessage(
 ): Promise<GraphMessage> {
   return (await gPost(
     token,
-    `/users/${encodeURIComponent(userEmail)}/messages/${messageId}/move`,
+    `/users/${encodeURIComponent(userEmail)}/messages/${encodeURIComponent(messageId)}/move`,
     { destinationId: destinationFolderId }
   )) as GraphMessage;
 }
@@ -182,7 +182,7 @@ export async function markAsRead(
   userEmail: string,
   messageId: string
 ): Promise<void> {
-  await gPatch(token, `/users/${encodeURIComponent(userEmail)}/messages/${messageId}`, {
+  await gPatch(token, `/users/${encodeURIComponent(userEmail)}/messages/${encodeURIComponent(messageId)}`, {
     isRead: true,
   });
 }

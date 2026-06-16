@@ -163,14 +163,23 @@ export function getConfig(): Config {
     sapBackendUrl: (process.env.SAP_BACKEND_URL ?? "").replace(/\/$/, ""),
     sapBackendApiKey: process.env.SAP_BACKEND_API_KEY ?? "",
 
+    // `tenant` es un identificador de ruteo real (lo usa el backend SAP centralizado en
+    // /api/v1/<tenant>/...), no solo una etiqueta — su valor NO debe cambiarse aquí.
     tenant: (process.env.TENANT ?? "tamaprint") as Tenant,
     ...((): Pick<Config, "tenantDisplayName" | "receptorKeywords" | "cardCodePrefix"> => {
+      // Fase 2: la identidad del tenant se configura por env vars.
+      // TENANT_META es un FALLBACK TEMPORAL para no romper los VMs que aún no tienen
+      // las env vars seteadas. TODO (Fase 2c): eliminar TENANT_META y las constantes
+      // *_RECEPTOR_KEYWORDS una vez que el .env de cada VM defina TENANT_DISPLAY_NAME,
+      // CARD_CODE_PREFIX y RECEPTOR_KEYWORDS.
       const t = (process.env.TENANT ?? "tamaprint") as Tenant;
-      const meta = TENANT_META[t] ?? TENANT_META["tamaprint"];
+      const fallback = TENANT_META[t] ?? TENANT_META["tamaprint"];
+      const envKeywords = process.env.RECEPTOR_KEYWORDS
+        ?.split(",").map(k => k.trim()).filter(Boolean);
       return {
-        tenantDisplayName: process.env.TENANT_DISPLAY_NAME ?? meta.displayName,
-        receptorKeywords:  meta.receptorKeywords,
-        cardCodePrefix:    process.env.CARD_CODE_PREFIX ?? meta.cardCodePrefix,
+        tenantDisplayName: process.env.TENANT_DISPLAY_NAME ?? fallback.displayName,
+        receptorKeywords:  envKeywords?.length ? envKeywords : fallback.receptorKeywords,
+        cardCodePrefix:    process.env.CARD_CODE_PREFIX ?? fallback.cardCodePrefix,
       };
     })(),
     stagingFolderName:      process.env.STAGING_FOLDER_NAME        ?? "A A REVISAR IA",

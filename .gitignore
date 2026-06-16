@@ -43,10 +43,13 @@ next-env.d.ts
 # local data folders
 /.data
 /.data.flexoimpresos
+/.data.flexo
+.data*/
 
 # archivos generados en runtime
 server.log
 project.tar.gz
+*.tar.gz
 # Directorio de experimentación local — no debe commitearse
 /scratch/
 .claude/

@@ -6,6 +6,11 @@
  */
 
 // ── Detección de empresa receptora ────────────────────────────────────────────
+//
+// FALLBACK TEMPORAL (Fase 2): las palabras clave de la empresa receptora deben venir
+// de la env var RECEPTOR_KEYWORDS (ver lib/config.ts). Estas constantes solo se usan
+// como respaldo mientras los .env de los VMs no estén poblados.
+// TODO (Fase 2c): eliminar estas constantes una vez que cada VM defina RECEPTOR_KEYWORDS.
 
 export const TAMAPRINT_RECEPTOR_KEYWORDS = [
   "tamaprint",
@@ -27,11 +32,6 @@ export const FLEXO_RECEPTOR_KEYWORDS = [
 export function esDirigidoAEmpresa(pdfText: string, keywords: string[]): boolean {
   const lower = pdfText.toLowerCase();
   return keywords.some(kw => lower.includes(kw.toLowerCase()));
-}
-
-/** @deprecated Usar esDirigidoAEmpresa con config.receptorKeywords */
-export function esDirigidoATamaprint(pdfText: string): boolean {
-  return esDirigidoAEmpresa(pdfText, TAMAPRINT_RECEPTOR_KEYWORDS);
 }
 
 // ── Clientes aprobados — NITs (señal principal) ────────────────────────────────
@@ -95,6 +95,9 @@ export function detectClientFromPdf(
   clientKeywords: Array<{ carpeta: string; keywords: string[] }> = CLIENT_TEXT_KEYWORDS,
 ): ClientDetection | null {
   const normalized = pdfText.replace(/\./g, "");
+  // Los NIT en CLIENT_NITS son de 9 dígitos (sin dígito de verificación). Se busca
+  // el NIT como substring del texto normalizado: así se tolera que el PDF traiga el
+  // DV pegado ("8000699330") o con guion ("800069933-0") — solo importan las 9 cifras.
   for (const { carpeta, nits } of clientNits) {
     if (nits.some(nit => normalized.includes(nit))) return { carpeta, metodo: 'nit' };
   }

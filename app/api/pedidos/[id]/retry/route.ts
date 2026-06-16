@@ -3,11 +3,17 @@ import { getDb } from "@/lib/db";
 import { runPipeline } from "@/lib/pipeline";
 
 // Maps an error state + fase_actual to { resetTo, fromStep }
-function retryConfig(estado: string, fase: number): { resetTo: string; fromStep: number } | null {
+export function retryConfig(estado: string, fase: number): { resetTo: string; fromStep: number } | null {
   if (estado === "ERROR_PARSE") {
     return fase <= 1
       ? { resetTo: "NUEVO",   fromStep: 1 }
       : { resetTo: "PARSED",  fromStep: 2 };
+  }
+  // ERROR_CATALOG (catálogo SAP no disponible al consultar AlternateCatNum) suele
+  // ser transitorio: ningún step lo reprocesa automáticamente, así que el retry
+  // manual es la única vía de recuperación. Reencolar desde step3.
+  if (estado === "ERROR_CATALOG") {
+    return { resetTo: "PARSE_VALIDO", fromStep: 3 };
   }
   if (estado === "ERROR_ITEMS" || estado === "ERROR_SAP") {
     return { resetTo: "PARSE_VALIDO", fromStep: 3 };

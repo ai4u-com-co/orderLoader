@@ -268,7 +268,6 @@ async function main() {
   // 6. Guardar CSVs
   const reportsDir = config.pedidosReportsDir;
   mkdirSync(reportsDir, { recursive: true });
-  const today = new Date().toISOString().split("T")[0];
   const slug = `${cardCode}-desde-${fromDateStr}`;
   const outPathClean = join(reportsDir, `lead-times-${slug}.csv`);
   const outPathFull = join(reportsDir, `lead-times-${slug}-full.csv`);

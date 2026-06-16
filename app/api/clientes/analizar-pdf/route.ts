@@ -152,7 +152,6 @@ export async function POST(req: NextRequest) {
     const hasNameHint = !!(clientNameHint && clientNameHint.trim());
 
     // ── Extraer texto para detección de NIT ─────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
     let pdfText = "";
     try { pdfText = (await pdfParseFn(buffer)).text; } catch { /* continuar con texto vacío */ }

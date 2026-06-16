@@ -354,10 +354,15 @@ export async function run(): Promise<StepResult> {
       const cerradoMap = new Map(cerrados.map(r => [String(r.orden_compra), r]));
 
       const orphanJobsRaw: MoveJob[] = [];
+      // Solo se deben marcar como .archived las carpetas cuya OC ya está CERRADO y
+      // que efectivamente entran al move. Marcar carpetas de OCs aún en proceso las
+      // excluiría para siempre de collectStagingUids → correos que nunca se archivan.
+      const carpetasAArchivar = new Set<string>();
       for (const [oc, entries] of stagingByOC.entries()) {
         const row = cerradoMap.get(oc);
         if (!row) continue;
-        for (const { uid, messageId, hasExtraFiles, source, graphMessageId } of entries) {
+        for (const { uid, messageId, hasExtraFiles, source, graphMessageId, carpetaPath } of entries) {
+          carpetasAArchivar.add(carpetaPath);
           const dest     = isLimpio(row)
             ? (hasExtraFiles ? manualFolder : F.DEST_OK)
             : (hasValidacionDiferencias(row) ? F.DEST_DIFERENCIAS : F.DEST_REVISAR);
@@ -385,11 +390,10 @@ export async function run(): Promise<StepResult> {
         } else {
           await moveInImap(config, orphanJobs, result.detalles);
         }
-        // Marcar carpetas como archivadas para no reintentarlas en runs futuros
-        for (const [, entries] of stagingByOC.entries()) {
-          for (const { carpetaPath } of entries) {
-            try { fs.writeFileSync(path.join(carpetaPath, ".archived"), ""); } catch { /* skip */ }
-          }
+        // Marcar como archivadas SOLO las carpetas de OCs ya cerradas (no las que
+        // siguen en proceso) para no reintentarlas en runs futuros.
+        for (const carpetaPath of carpetasAArchivar) {
+          try { fs.writeFileSync(path.join(carpetaPath, ".archived"), ""); } catch { /* skip */ }
         }
         result.detalles.push(`✓ ${orphanJobs.length} correo(s) huérfano(s) archivados`);
         result.saltados += orphanJobs.length;

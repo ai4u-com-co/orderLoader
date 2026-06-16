@@ -11,13 +11,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getConfig } from "../config";
 import { getDb, logPipeline, errToMsg } from "../db";
 import { OrderStatus } from "../constants";
-import { sendAlertEmail } from "../mailer";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
 import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb, CLIENT_NITS, CLIENT_TEXT_KEYWORDS } from "../pdf-classify";
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
+import { estimateCostUsd } from "../pricing";
+
+const PARSE_MODEL = "claude-sonnet-4-6";
 
 export interface StepResult {
   procesados: number;
@@ -53,7 +55,7 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
   const visionContent = buildVisionContent(pages);
 
   const msg = await withAnthropicRetry(() => client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: PARSE_MODEL,
     max_tokens: 8192,
     temperature: 0,
     system: prompt,
@@ -238,7 +240,6 @@ export async function run(): Promise<StepResult> {
   const CLIENTES = clientesDb.length > 0 ? clientesDb : [];
   const CARPETAS_A_ESCANEAR = [...CLIENTES.map(c => c.carpeta), "Otros"];
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfParseFn = require("pdf-parse/lib/pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
 
   for (const carpeta of CARPETAS_A_ESCANEAR) {
@@ -337,7 +338,7 @@ export async function run(): Promise<StepResult> {
           if (!order) {
             result.errores++;
             result.detalles.push(`  ✗ ${status}`);
-            logPipeline(db, carpetaNombre, 1, "parse", "ERROR", `AI parse fallido: ${status}`, usage.input, usage.output, "claude-sonnet-4-6");
+            logPipeline(db, carpetaNombre, 1, "parse", "ERROR", `AI parse fallido: ${status}`, usage.input, usage.output, PARSE_MODEL);
             const retries = fs.existsSync(retriesPath)
               ? parseInt(fs.readFileSync(retriesPath, "utf8") || "0") + 1 : 1;
             if (retries >= 3) {
@@ -383,13 +384,13 @@ export async function run(): Promise<StepResult> {
             continue;
           }
 
-          const costoIaUsd = ((usage.input ?? 0) / 1e6) * 3.0 + ((usage.output ?? 0) / 1e6) * 15.0;
+          const costoIaUsd = estimateCostUsd(PARSE_MODEL, usage.input ?? 0, usage.output ?? 0);
 
           const tx = db.transaction(() => {
             insertSapOrder(db, order, ocFolder, clienteInfo.nombre);
             db.prepare(`UPDATE pedidos_maestro SET costo_ia_usd=COALESCE(costo_ia_usd, 0)+? WHERE orden_compra=?`)
               .run(costoIaUsd, order.NumAtCard);
-            logPipeline(db, order.NumAtCard, 1, "parse", "OK", `PDF: ${pdfFile}`, usage.input, usage.output, "claude-sonnet-4-6");
+            logPipeline(db, order.NumAtCard, 1, "parse", "OK", `PDF: ${pdfFile}`, usage.input, usage.output, PARSE_MODEL);
           });
           tx();
 

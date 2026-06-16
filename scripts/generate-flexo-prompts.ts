@@ -65,7 +65,7 @@ You are a Purchase Order Analyzer specialized in extracting structured informati
 - **Document date** (TaxDate): <CAMPO REAL del PDF, e.g. "Fecha:", "Fecha de emisión">
 - **Delivery date** (DocDueDate): <CAMPO REAL del PDF, e.g. "Fecha de entrega", "Llegada esperada", o columna por línea>
 - **Today's date** (DocDate): The current date at time of processing — NOT from the document
-- **Observations** (Comments): <Indicar la sección REAL, e.g. "Notas", "Observaciones específicas". Si el doc no tiene → "Use \"\"">
+- **Observations** (Comments): <Indicar la sección REAL, e.g. "Notas", "Observaciones específicas". Si el doc no tiene → "Use ''">
 - **Line items**: For each product row extract:
   - Product code (SupplierCatNum): <CAMPO REAL: nombre de la columna del código, con instrucciones específicas si hay que extraer parte del código>
   - Quantity (Quantity): <CAMPO REAL>

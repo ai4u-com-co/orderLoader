@@ -223,7 +223,7 @@ export function migrate(): void {
       if (msg.includes("duplicate column name") || msg.includes("already exists")) {
         db.prepare("INSERT OR IGNORE INTO _migrations (name) VALUES (?)").run(m.name);
       } else {
-        throw new Error(`Migration "${m.name}" failed: ${msg}`);
+        throw new Error(`Migration "${m.name}" failed: ${msg}`, { cause: e });
       }
     }
   }
