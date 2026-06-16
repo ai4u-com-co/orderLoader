@@ -127,10 +127,11 @@ async function runSteps(stepsToRun: typeof STEPS, onStep?: PipelineOptions["onSt
 async function checkMissedCron(): Promise<void> {
   try {
     const db = getDb();
-    // 'download' es el primera fase_nombre que se loguea en cada corrida de step0.
-    // 'pipeline' nunca se loguea — la query anterior nunca retornaba resultado.
+    // Se mide contra el 'heartbeat' (escrito al final de CADA corrida), no contra
+    // 'download' (que solo se escribe al procesar un correo nuevo) — así no se alerta
+    // "cron perdido" en períodos sin pedidos donde el cron sí está corriendo.
     const row = db
-      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'download'`)
+      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'heartbeat'`)
       .get() as { last: string | null };
     if (!row?.last) return;
     const lastMs = new Date(row.last).getTime();
@@ -142,7 +143,7 @@ async function checkMissedCron(): Promise<void> {
         `[OrderLoader/${tenantDisplayName}] ⚠ Cron perdido — sin actividad hace ${h}h`,
         `<p>El pipeline no registra actividad desde hace <strong>${h} horas</strong>.</p>
          <p>Última ejecución: <code>${row.last}</code></p>
-         <p>Verificar que el cron de GitHub Actions está corriendo.</p>`,
+         <p>Verificar que el cron que dispara <code>/api/pipeline/run</code> está corriendo.</p>`,
       ).catch(() => {});
     }
   } catch { /* no bloquear el pipeline por esto */ }
@@ -453,6 +454,13 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
     _liveState.running = false;
     _liveState.finishedAt = Date.now();
     await logoutSapClient();
+    // Heartbeat: deja constancia de que el pipeline corrió, SIN importar si hubo correos
+    // nuevos. checkMissedCron() y /api/health miden la salud del cron contra este registro;
+    // antes medían contra 'download' (que solo se escribe al procesar un correo nuevo),
+    // lo que generaba falsos "cron perdido" en períodos sin pedidos.
+    try {
+      logPipeline(getDb(), null, -1, "heartbeat", "OK", `pipeline run ${runId} completado`);
+    } catch { /* no bloquear el cierre del pipeline por el heartbeat */ }
     log.info(`──────────────────────────── pipeline done (${fmtMs(Date.now() - runStart)}) ────────────────────────────`);
     await alertIfHighErrorRate(_finalResults);
     clearRunContext();

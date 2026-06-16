@@ -18,10 +18,11 @@ export async function GET(req: NextRequest) {
   try {
     const db = getDb();
     dbCount = (db.prepare("SELECT COUNT(*) as c FROM pedidos_maestro").get() as { c: number }).c;
-    // 'download' es la primera fase que se loguea en cada corrida (step0). Nunca se
-    // loguea fase_nombre='pipeline' — usar 'pipeline' dejaba last_run/missed_cron en null.
+    // Se mide contra el 'heartbeat' (escrito al final de cada corrida del pipeline),
+    // no contra 'download' (que solo se escribe al procesar un correo nuevo) — así
+    // last_run/missed_cron reflejan la salud del cron, no la llegada de pedidos.
     const row = db
-      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'download'`)
+      .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'heartbeat'`)
       .get() as { last: string | null };
     lastPipelineRun = row?.last ?? null;
     if (lastPipelineRun) {
