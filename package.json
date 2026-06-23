@@ -15,7 +15,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai4u/design-system": "github:donchelo/sistemaDiseno",
+    "@ai4u/design-system": "github:donchelo/sistemaDiseno#v1.1.0",
     "@anthropic-ai/sdk": "^0.80.0",
     "@types/mailparser": "^3.4.6",
     "better-sqlite3": "^12.8.0",
