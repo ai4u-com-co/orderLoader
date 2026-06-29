@@ -12,7 +12,7 @@ import { run as step4 } from "./steps/step4-upload";
 import { run as step5 } from "./steps/step5-reconcile";
 import { run as step6 } from "./steps/step6-notify";
 import { run as step7 } from "./steps/step7-archive";
-import { logoutSapClient } from "./sap-client";
+import { clearActiveSap } from "./sap-gateway";
 
 export interface StepResult {
   step: number;
@@ -361,7 +361,7 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
   } catch (e) { log.error({ err: e }, "recoverPendingMoves falló"); }
 
   try {
-    await logoutSapClient();
+    clearActiveSap();
 
     // Modo onlyStep o fromStep > 0: ejecución directa sin loop
     if (onlyStep != null || fromStep > 0) {
@@ -380,7 +380,7 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
 
     while (true) {
       iteration++;
-      await logoutSapClient();
+      clearActiveSap();
       log.info(`─── correo ${iteration} ${"─".repeat(Math.max(0, 70 - String(iteration).length))}`);
 
       // Step 0: descargar 1 correo
@@ -414,7 +414,7 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
 
       // Steps 6-7: notificar y archivar el correo actual antes de pasar al siguiente
       if (finalSteps.length > 0) {
-        await logoutSapClient();
+        clearActiveSap();
         const finalResults = await runSteps(finalSteps, trackedOnStep);
         allResults.push(...finalResults);
       }
@@ -453,7 +453,7 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
     _stopRequested = false;
     _liveState.running = false;
     _liveState.finishedAt = Date.now();
-    await logoutSapClient();
+    clearActiveSap();
     // Heartbeat: deja constancia de que el pipeline corrió, SIN importar si hubo correos
     // nuevos. checkMissedCron() y /api/health miden la salud del cron contra este registro;
     // antes medían contra 'download' (que solo se escribe al procesar un correo nuevo),
