@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Reenvia el ssh-agent del host para resolver deps privadas @ai4u/* (git+ssh)
+      ssh:
+        - default
     container_name: orderloader-flexo
     restart: unless-stopped
     ports:

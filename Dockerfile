@@ -3,16 +3,22 @@
 FROM node:20-alpine AS builder
 
 # better-sqlite3 requiere python, make y g++ para compilar nativamente
-RUN apk add --no-cache python3 make g++ libc6-compat
+# git + openssh-client: resolver dependencias privadas (@ai4u/*) por git+ssh durante npm ci
+RUN apk add --no-cache python3 make g++ libc6-compat git openssh-client
 
 WORKDIR /app
 
 # Copiar archivos de dependencias
 COPY package.json package-lock.json* ./
 
-# Instalar dependencias puras (incluyendo devDependencies para el build)
-# --mount=type=cache evita que el cache npm ocupe espacio del overlay filesystem del builder
-RUN --mount=type=cache,target=/root/.npm npm ci
+# Instalar dependencias. Se reenvia el ssh-agent del host (--mount=type=ssh) solo
+# durante este RUN para clonar los repos privados @ai4u/*; la llave NO queda en la imagen.
+# --mount=type=cache evita que el cache npm ocupe espacio del overlay filesystem del builder.
+# Requiere construir con: docker compose build --ssh default  (el compose ya lo declara).
+RUN --mount=type=ssh --mount=type=cache,target=/root/.npm \
+    mkdir -p -m 0700 ~/.ssh && \
+    ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null && \
+    npm ci
 
 # Copiar resto del código fuente del proyecto
 COPY . .
