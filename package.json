@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@ai4u/design-system": "github:donchelo/sistemaDiseno#v1.1.0",
-    "@ai4u/platform": "github:donchelo/platform#v0.2.0",
+    "@ai4u/platform": "github:donchelo/platform#v0.2.3",
     "@anthropic-ai/sdk": "^0.80.0",
     "@types/mailparser": "^3.4.6",
     "better-sqlite3": "^12.8.0",
