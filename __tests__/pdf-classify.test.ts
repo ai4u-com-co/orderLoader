@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { detectClientFromPdf } from "@/lib/pdf-classify";
+import { detectClientFromPdf, ajustarClasificacionPorTriage } from "@/lib/pdf-classify";
+import type { TriageResult } from "@/lib/ai-triage";
 
 const NITS = [
   { carpeta: "Hermeco", nits: ["890924167"] },
@@ -40,5 +41,66 @@ describe("detectClientFromPdf — detección por NIT", () => {
 
   it("retorna null cuando no hay señal", () => {
     expect(detectClientFromPdf("documento sin datos relevantes", NITS, KEYWORDS)).toBeNull();
+  });
+});
+
+// Casos reales: "UN SOLO PROVEEDOR" (Tamaprint) y "MACROLAB"/"velez" (Flexo) — una
+// keyword genérica matchea texto ajeno al cliente real (otra empresa de nombre similar,
+// o el apellido de una persona en una firma de correo). El NIT es la señal confiable:
+// si la IA de triage no logra confirmar el cliente para un match por keyword, no hay
+// que confiar en la keyword.
+describe("ajustarClasificacionPorTriage — prioridad del NIT sobre la keyword", () => {
+  const clientNits = [{ carpeta: "CuerosVelez", nits: ["800191700"] }];
+
+  const basePdf = {
+    client: "CuerosVelez",
+    isDirigidoAEmpresa: true,
+    isApprovedOC: true, // heurística inicial (keyword "velez") lo había aprobado
+    detectionMethod: "keyword" as const,
+  };
+
+  it("demota a revisión manual si la IA confirma orden_compra pero no puede identificar al cliente (bug real: Ana Cristina Vélez / Bouquet Aromas)", () => {
+    const ia: TriageResult = {
+      filename: "oc.pdf",
+      tipo: "orden_compra",
+      cliente: null,
+      razon: "OC de BOUQUET AROMAS Y FRAGANCIAS S.A.S., cliente no está en lista aprobada",
+    };
+    const result = ajustarClasificacionPorTriage(basePdf, ia, clientNits);
+    expect(result.isApprovedOC).toBe(false);
+    // El nombre de carpeta no se toca: solo se retira la aprobación, no se inventa cliente.
+    expect(result.client).toBe("CuerosVelez");
+  });
+
+  it("mantiene aprobado si la IA confirma el mismo cliente detectado por keyword", () => {
+    const ia: TriageResult = { filename: "oc.pdf", tipo: "orden_compra", cliente: "CuerosVelez", razon: "NIT confirmado" };
+    const result = ajustarClasificacionPorTriage(basePdf, ia, clientNits);
+    expect(result.isApprovedOC).toBe(true);
+    expect(result.client).toBe("CuerosVelez");
+  });
+
+  it("cambia al cliente correcto si la IA identifica uno distinto del detectado por keyword", () => {
+    const ia: TriageResult = { filename: "oc.pdf", tipo: "orden_compra", cliente: "OtroCliente", razon: "NIT distinto confirmado" };
+    const result = ajustarClasificacionPorTriage(basePdf, ia, clientNits);
+    expect(result.isApprovedOC).toBe(true);
+    expect(result.client).toBe("OtroCliente");
+  });
+
+  it("demota si la IA determina que el documento no es una orden de compra", () => {
+    const ia: TriageResult = { filename: "cotizacion.pdf", tipo: "documento_relevante", cliente: null, razon: "Es una cotización, no una OC" };
+    const result = ajustarClasificacionPorTriage(basePdf, ia, clientNits);
+    expect(result.isApprovedOC).toBe(false);
+  });
+
+  it("no toca la clasificación si no hay resultado de triage IA disponible (fallback)", () => {
+    const result = ajustarClasificacionPorTriage(basePdf, undefined, clientNits);
+    expect(result).toEqual(basePdf);
+  });
+
+  it("detección por NIT: la IA solo puede ELEVAR isApprovedOC, nunca degradarla", () => {
+    const pdfNit = { client: "Hermeco", isDirigidoAEmpresa: false, isApprovedOC: false, detectionMethod: "nit" as const };
+    const ia: TriageResult = { filename: "oc.pdf", tipo: "orden_compra", cliente: "Hermeco", razon: "NIT confirmado" };
+    const result = ajustarClasificacionPorTriage(pdfNit, ia, clientNits);
+    expect(result.isApprovedOC).toBe(true);
   });
 });

@@ -5,6 +5,8 @@
  * Fuente de verdad compartida entre step0 (pre-triage) y step1 (parse).
  */
 
+import type { TriageResult } from "./ai-triage";
+
 // ── Detección de empresa receptora ────────────────────────────────────────────
 // Las palabras clave de la empresa receptora vienen de la env var RECEPTOR_KEYWORDS
 // (ver lib/config.ts → config.receptorKeywords). No hay listas por tenant en código.
@@ -51,6 +53,54 @@ export function detectClientFromPdf(
   }
 
   return null;
+}
+
+interface ClasificacionAjustable {
+  client: string | null;
+  isDirigidoAEmpresa: boolean;
+  isApprovedOC: boolean;
+  detectionMethod: 'nit' | 'keyword' | null;
+}
+
+/**
+ * Ajusta la clasificación heurística (NIT/keyword) según el veredicto del triage IA.
+ *
+ * Prioridad: el NIT del documento es la señal confiable (la propia IA lo prioriza, ver
+ * ai-triage.ts). La keyword es una señal débil — puede matchear texto ajeno al cliente
+ * real (ej. el apellido de una persona en una firma de correo, o el nombre de otra
+ * empresa con razón social similar). Por eso, si la detección inicial fue por keyword
+ * y la IA no logra confirmar el cliente (`ia.cliente === null`), NO hay que confiar en
+ * la keyword: se demota a revisión manual en vez de asumir el cliente detectado.
+ */
+export function ajustarClasificacionPorTriage<T extends ClasificacionAjustable>(
+  pdf: T,
+  ia: TriageResult | undefined,
+  clientNits: Array<{ carpeta: string; nits: string[] }>,
+): T {
+  if (!ia) return pdf;
+
+  if (pdf.detectionMethod === "nit") {
+    // El NIT ya es la señal confiable: la IA solo puede ELEVAR isApprovedOC si la
+    // detección de empresa receptora había fallado, nunca degradarla.
+    if (!pdf.isApprovedOC && ia.tipo === "orden_compra") return { ...pdf, isApprovedOC: true };
+    return pdf;
+  }
+
+  if (pdf.detectionMethod === "keyword") {
+    if (ia.tipo !== "orden_compra") return { ...pdf, isApprovedOC: false };
+    if (ia.cliente && ia.cliente !== pdf.client) {
+      return { ...pdf, client: ia.cliente, isApprovedOC: pdf.isDirigidoAEmpresa };
+    }
+    if (!ia.cliente) return { ...pdf, isApprovedOC: false };
+    return pdf;
+  }
+
+  if (pdf.detectionMethod === null && ia.tipo === "orden_compra" && ia.cliente) {
+    const clientExists = clientNits.some(c => c.carpeta === ia.cliente);
+    if (clientExists) return { ...pdf, client: ia.cliente, isApprovedOC: true };
+  }
+
+  return pdf;
 }
 
 /**
