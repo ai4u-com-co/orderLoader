@@ -5,6 +5,8 @@
  * Fuente de verdad compartida entre step0 (pre-triage) y step1 (parse).
  */
 
+import type { TriageResult } from "./ai-triage";
+
 // ── Detección de empresa receptora ────────────────────────────────────────────
 // Las palabras clave de la empresa receptora vienen de la env var RECEPTOR_KEYWORDS
 // (ver lib/config.ts → config.receptorKeywords). No hay listas por tenant en código.
@@ -51,6 +53,60 @@ export function detectClientFromPdf(
   }
 
   return null;
+}
+
+interface ClasificacionAjustable {
+  client: string | null;
+  isDirigidoAEmpresa: boolean;
+  isApprovedOC: boolean;
+  detectionMethod: 'nit' | 'keyword' | null;
+}
+
+/**
+ * Ajusta la clasificación heurística (NIT/keyword) según el veredicto del triage IA.
+ *
+ * Prioridad: el NIT del documento es la señal confiable por sí sola (la propia IA lo
+ * prioriza, ver ai-triage.ts) — no necesita confirmación para quedar aprobado, y la IA
+ * solo puede ELEVARLO (nunca degradarlo).
+ *
+ * La keyword, en cambio, es una señal débil — puede matchear texto ajeno al cliente
+ * real (ej. el apellido de una persona en una firma de correo, o el nombre de otra
+ * empresa con razón social similar) — y por diseño SIEMPRE requiere que la IA la
+ * confirme, incluida la ausencia de veredicto: si el triage IA no está disponible para
+ * este adjunto (servicio caído, sin saldo, etc.), no hay con qué confirmar la keyword,
+ * así que se demota a revisión manual en vez de aprobarla a ciegas. Esto es intencional:
+ * durante una caída del servicio de IA, los clientes detectados solo por NIT siguen
+ * procesándose normalmente; los detectados solo por keyword se pausan hasta que la IA
+ * vuelva a estar disponible, en vez de arriesgar un pedido mal atribuido.
+ */
+export function ajustarClasificacionPorTriage<T extends ClasificacionAjustable>(
+  pdf: T,
+  ia: TriageResult | undefined,
+  clientNits: Array<{ carpeta: string; nits: string[] }>,
+): T {
+  if (pdf.detectionMethod === "nit") {
+    if (ia && !pdf.isApprovedOC && ia.tipo === "orden_compra") return { ...pdf, isApprovedOC: true };
+    return pdf;
+  }
+
+  if (pdf.detectionMethod === "keyword") {
+    if (!ia) return { ...pdf, isApprovedOC: false };
+    if (ia.tipo !== "orden_compra") return { ...pdf, isApprovedOC: false };
+    if (ia.cliente && ia.cliente !== pdf.client) {
+      return { ...pdf, client: ia.cliente, isApprovedOC: pdf.isDirigidoAEmpresa };
+    }
+    if (!ia.cliente) return { ...pdf, isApprovedOC: false };
+    return pdf;
+  }
+
+  if (!ia) return pdf;
+
+  if (pdf.detectionMethod === null && ia.tipo === "orden_compra" && ia.cliente) {
+    const clientExists = clientNits.some(c => c.carpeta === ia.cliente);
+    if (clientExists) return { ...pdf, client: ia.cliente, isApprovedOC: true };
+  }
+
+  return pdf;
 }
 
 /**
