@@ -92,9 +92,9 @@ describe("ajustarClasificacionPorTriage — prioridad del NIT sobre la keyword",
     expect(result.isApprovedOC).toBe(false);
   });
 
-  it("no toca la clasificación si no hay resultado de triage IA disponible (fallback)", () => {
+  it("demota si el triage IA no está disponible para este adjunto (servicio caído/sin saldo) — la keyword nunca se aprueba sin confirmación", () => {
     const result = ajustarClasificacionPorTriage(basePdf, undefined, clientNits);
-    expect(result).toEqual(basePdf);
+    expect(result.isApprovedOC).toBe(false);
   });
 
   it("detección por NIT: la IA solo puede ELEVAR isApprovedOC, nunca degradarla", () => {
@@ -102,5 +102,11 @@ describe("ajustarClasificacionPorTriage — prioridad del NIT sobre la keyword",
     const ia: TriageResult = { filename: "oc.pdf", tipo: "orden_compra", cliente: "Hermeco", razon: "NIT confirmado" };
     const result = ajustarClasificacionPorTriage(pdfNit, ia, clientNits);
     expect(result.isApprovedOC).toBe(true);
+  });
+
+  it("detección por NIT: sin triage IA disponible, el NIT es suficiente por sí solo (no se degrada)", () => {
+    const pdfNit = { client: "Hermeco", isDirigidoAEmpresa: true, isApprovedOC: true, detectionMethod: "nit" as const };
+    const result = ajustarClasificacionPorTriage(pdfNit, undefined, clientNits);
+    expect(result).toEqual(pdfNit);
   });
 });

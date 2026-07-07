@@ -65,28 +65,32 @@ interface ClasificacionAjustable {
 /**
  * Ajusta la clasificación heurística (NIT/keyword) según el veredicto del triage IA.
  *
- * Prioridad: el NIT del documento es la señal confiable (la propia IA lo prioriza, ver
- * ai-triage.ts). La keyword es una señal débil — puede matchear texto ajeno al cliente
+ * Prioridad: el NIT del documento es la señal confiable por sí sola (la propia IA lo
+ * prioriza, ver ai-triage.ts) — no necesita confirmación para quedar aprobado, y la IA
+ * solo puede ELEVARLO (nunca degradarlo).
+ *
+ * La keyword, en cambio, es una señal débil — puede matchear texto ajeno al cliente
  * real (ej. el apellido de una persona en una firma de correo, o el nombre de otra
- * empresa con razón social similar). Por eso, si la detección inicial fue por keyword
- * y la IA no logra confirmar el cliente (`ia.cliente === null`), NO hay que confiar en
- * la keyword: se demota a revisión manual en vez de asumir el cliente detectado.
+ * empresa con razón social similar) — y por diseño SIEMPRE requiere que la IA la
+ * confirme, incluida la ausencia de veredicto: si el triage IA no está disponible para
+ * este adjunto (servicio caído, sin saldo, etc.), no hay con qué confirmar la keyword,
+ * así que se demota a revisión manual en vez de aprobarla a ciegas. Esto es intencional:
+ * durante una caída del servicio de IA, los clientes detectados solo por NIT siguen
+ * procesándose normalmente; los detectados solo por keyword se pausan hasta que la IA
+ * vuelva a estar disponible, en vez de arriesgar un pedido mal atribuido.
  */
 export function ajustarClasificacionPorTriage<T extends ClasificacionAjustable>(
   pdf: T,
   ia: TriageResult | undefined,
   clientNits: Array<{ carpeta: string; nits: string[] }>,
 ): T {
-  if (!ia) return pdf;
-
   if (pdf.detectionMethod === "nit") {
-    // El NIT ya es la señal confiable: la IA solo puede ELEVAR isApprovedOC si la
-    // detección de empresa receptora había fallado, nunca degradarla.
-    if (!pdf.isApprovedOC && ia.tipo === "orden_compra") return { ...pdf, isApprovedOC: true };
+    if (ia && !pdf.isApprovedOC && ia.tipo === "orden_compra") return { ...pdf, isApprovedOC: true };
     return pdf;
   }
 
   if (pdf.detectionMethod === "keyword") {
+    if (!ia) return { ...pdf, isApprovedOC: false };
     if (ia.tipo !== "orden_compra") return { ...pdf, isApprovedOC: false };
     if (ia.cliente && ia.cliente !== pdf.client) {
       return { ...pdf, client: ia.cliente, isApprovedOC: pdf.isDirigidoAEmpresa };
@@ -94,6 +98,8 @@ export function ajustarClasificacionPorTriage<T extends ClasificacionAjustable>(
     if (!ia.cliente) return { ...pdf, isApprovedOC: false };
     return pdf;
   }
+
+  if (!ia) return pdf;
 
   if (pdf.detectionMethod === null && ia.tipo === "orden_compra" && ia.cliente) {
     const clientExists = clientNits.some(c => c.carpeta === ia.cliente);
