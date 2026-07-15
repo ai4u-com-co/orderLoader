@@ -108,7 +108,7 @@ npm run dev
 /lib/steps        → Lógica de los 8 pasos del pipeline (step0–step7)
 /lib/config.ts    → Variables de entorno y mapeo NIT→CardCode
 /lib/db.ts        → Gestión de base de datos SQLite
-/lib/sap-client.ts → Cliente HTTP para SAP B1 Service Layer
+/lib/backend-client.ts → Cliente HTTP del gateway centralizado sap-b1-backend
 /lib/schemas.ts   → Schema Zod para validación del JSON SAP
 /lib/prompts      → Prompts de Claude por cliente
 /scripts          → Utilidades de mantenimiento y diagnóstico
@@ -131,10 +131,8 @@ Copia `.env.example` a `.env` y completa los valores:
 | `EMAIL_SMTP_PORT`     | —         | Puerto SMTP (default: `587`) |
 | `NOTIFY_EMAIL`        | ✅        | Email donde llegan las notificaciones de pedidos |
 | `NOTIFY_ALERTAS_EMAIL`| —         | Email para alertas de error (default: `NOTIFY_EMAIL`) |
-| `SAP_B1_URL`          | ✅        | URL del Service Layer SAP B1 |
-| `SAP_B1_USER`         | ✅        | Usuario SAP |
-| `SAP_B1_PASS`         | ✅        | Contraseña SAP |
-| `SAP_B1_COMPANY`      | ✅        | Nombre de la compañía SAP |
+| `SAP_BACKEND_URL`     | ✅        | URL del gateway centralizado sap-b1-backend |
+| `SAP_BACKEND_API_KEY` | ✅        | API key del tenant en el gateway |
 | `ANTHROPIC_API_KEY`   | ✅        | API Key de Anthropic Claude |
 | `DATA_DIR`            | —         | Directorio de datos persistentes (default: `./.data`) |
 

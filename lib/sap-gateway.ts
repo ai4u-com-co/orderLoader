@@ -1,10 +1,11 @@
 /**
  * Unified SAP access layer.
- * Returns the backend HTTP client when SAP_BACKEND_URL is configured,
- * otherwise falls back to the direct SAP B1 Service Layer client.
- * Steps import from here instead of sap-client directly.
+ * OrderLoader opera EXCLUSIVAMENTE vía el gateway centralizado sap-b1-backend
+ * (SAP_BACKEND_URL + SAP_BACKEND_API_KEY). El cliente directo al Service Layer
+ * (lib/sap-client.ts, credenciales SAP_B1_* crudas) se retiró una vez ambos
+ * tenants quedaron confirmados en modo gateway en producción.
+ * Steps import from here instead of the HTTP client directly.
  */
-import { getSapClient, clearSapClient } from "./sap-client";
 import { getBackendClient, clearBackendClient } from "./backend-client";
 
 export interface SapGateway {
@@ -14,11 +15,14 @@ export interface SapGateway {
 
 export async function getActiveSap(): Promise<SapGateway> {
   const backend = getBackendClient();
-  if (backend) return backend;
-  return getSapClient();
+  if (!backend) {
+    throw new Error(
+      "SAP_BACKEND_URL y SAP_BACKEND_API_KEY son requeridas — OrderLoader solo opera vía el gateway sap-b1-backend",
+    );
+  }
+  return backend;
 }
 
 export function clearActiveSap(): void {
   clearBackendClient();
-  clearSapClient();
 }
