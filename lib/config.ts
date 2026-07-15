@@ -42,13 +42,7 @@ export interface Config {
   notifyCcEmail: string;
   notifyAlertasEmail: string;
 
-  // SAP B1 — conexión directa (requerida si SAP_BACKEND_URL no está configurado)
-  sapUrl: string;
-  sapUser: string;
-  sapPass: string;
-  sapCompany: string;
-
-  // SAP B1 Backend centralizado en Vercel (alternativa a la conexión directa)
+  // SAP B1 Backend centralizado (única vía de acceso a SAP — el cliente directo se retiró)
   sapBackendUrl: string;
   sapBackendApiKey: string;
 
@@ -74,11 +68,9 @@ const REQUIRED_ENV_BASE: [string, string][] = [
   ["RECEPTOR_KEYWORDS",  "palabras/NIT de la empresa receptora (lista separada por comas)"],
 ];
 
-const REQUIRED_ENV_SAP_DIRECT: [string, string][] = [
-  ["SAP_B1_URL",     "conexión SAP Business One"],
-  ["SAP_B1_USER",    "conexión SAP Business One"],
-  ["SAP_B1_PASS",    "conexión SAP Business One"],
-  ["SAP_B1_COMPANY", "conexión SAP Business One"],
+const REQUIRED_ENV_SAP_BACKEND: [string, string][] = [
+  ["SAP_BACKEND_URL",     "gateway centralizado sap-b1-backend"],
+  ["SAP_BACKEND_API_KEY", "API key del tenant en el gateway"],
 ];
 
 const REQUIRED_ENV_IMAP: [string, string][] = [
@@ -96,11 +88,7 @@ function validateEnv(): void {
   const isMicrosoft = process.env.EMAIL_PROVIDER === "microsoft";
   const providerEnv = isMicrosoft ? REQUIRED_ENV_MICROSOFT : REQUIRED_ENV_IMAP;
 
-  // Si no hay backend centralizado configurado, exigir conexión SAP directa
-  const hasBackend = process.env.SAP_BACKEND_URL && process.env.SAP_BACKEND_API_KEY;
-  const sapEnv = hasBackend ? [] : REQUIRED_ENV_SAP_DIRECT;
-
-  const all = [...REQUIRED_ENV_BASE, ...providerEnv, ...sapEnv];
+  const all = [...REQUIRED_ENV_BASE, ...providerEnv, ...REQUIRED_ENV_SAP_BACKEND];
   const missing = all.filter(([key]) => !process.env[key]);
   if (missing.length === 0) return;
   const lines = missing.map(([key, desc]) => `  - ${key}  (${desc})`).join("\n");
@@ -155,11 +143,6 @@ export function getConfig(): Config {
       process.env.NOTIFY_ALERTAS_EMAIL ||
       process.env.NOTIFY_EMAIL ||
       emailUser,
-
-    sapUrl: (process.env.SAP_B1_URL ?? "").replace(/\/$/, ""),
-    sapUser: process.env.SAP_B1_USER ?? "",
-    sapPass: process.env.SAP_B1_PASS ?? "",
-    sapCompany: process.env.SAP_B1_COMPANY ?? "",
 
     sapBackendUrl: (process.env.SAP_BACKEND_URL ?? "").replace(/\/$/, ""),
     sapBackendApiKey: process.env.SAP_BACKEND_API_KEY ?? "",

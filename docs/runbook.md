@@ -18,10 +18,10 @@ docker logs orderloader --tail=50 | grep -i sap
 ```
 
 **Solución:**
-1. Verificar que `SAP_B1_USER` y `SAP_B1_PASS` en `.env` son correctos
-2. Verificar que el servidor SAP está levantado: `curl -k https://SAP_HOST:50000/b1s/v2/`
-3. Si las credenciales cambiaron: actualizar `.env` y `docker compose up -d --build`
-4. Si el servidor SAP se reinició, el cliente se reconecta automáticamente en el próximo pipeline run
+1. Verificar que `SAP_BACKEND_URL` y `SAP_BACKEND_API_KEY` en `.env` son correctos (la API key debe coincidir con `{TENANT}_API_KEY` o `{TENANT}_API_KEY_2` en el proyecto Vercel de sap-b1-backend)
+2. Verificar que el gateway está arriba: `curl -s -o /dev/null -w "%{http_code}" https://sap-b1-backend.vercel.app/` (esperado 200)
+3. Si la API key cambió: actualizar `.env` y recrear el contenedor con `docker compose up -d --force-recreate` (un `docker restart` NO recarga el env_file)
+4. Si el gateway devuelve 502/504, el problema es entre el gateway y SAP — revisar logs del proyecto sap-b1-backend en Vercel
 
 ---
 

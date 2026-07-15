@@ -33,8 +33,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── SAP ──────────────────────────────────────────────────────────────────────
-  const usingBackend = !!(config.sapBackendUrl && config.sapBackendApiKey);
-  const sapConfigured = usingBackend || !!(config.sapUrl && config.sapUser && config.sapPass && config.sapCompany);
+  const sapConfigured = !!(config.sapBackendUrl && config.sapBackendApiKey);
   let sapStatus = sapConfigured ? "configured" : "missing_vars";
   let sapError: string | null = null;
 
@@ -121,8 +120,8 @@ export async function GET(req: NextRequest) {
       sap: {
         status: sapStatus,
         configured: sapConfigured,
-        mode: usingBackend ? "backend" : "direct",
-        url: usingBackend ? config.sapBackendUrl : (config.sapUrl || "(no configurado)"),
+        mode: "backend",
+        url: config.sapBackendUrl || "(no configurado)",
         error: sapError,
       },
       email: {

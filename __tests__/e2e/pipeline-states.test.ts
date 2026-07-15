@@ -15,10 +15,9 @@ import type Database from "better-sqlite3";
 const mockSapGet  = vi.fn();
 const mockSapPost = vi.fn();
 
-vi.mock("@/lib/sap-client", () => ({
-  getSapClient:   vi.fn().mockResolvedValue({ get: mockSapGet, post: mockSapPost }),
-  clearSapClient: vi.fn(),
-  logoutSapClient: vi.fn().mockResolvedValue(undefined),
+vi.mock("@/lib/sap-gateway", () => ({
+  getActiveSap:   vi.fn().mockResolvedValue({ get: mockSapGet, post: mockSapPost }),
+  clearActiveSap: vi.fn(),
 }));
 
 vi.mock("@/lib/mailer",     () => ({ sendAlertEmail: vi.fn().mockResolvedValue(undefined) }));

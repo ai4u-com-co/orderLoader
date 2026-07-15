@@ -52,8 +52,12 @@ para Tamaprint sin login.
 ### ANTHROPIC_API_KEY
 Rotar en https://console.anthropic.com/ → API Keys. Actualizar `.env` y redeploy.
 
-### SAP B1 Credentials
-Coordinar con el administrador SAP. Actualizar `SAP_B1_USER`, `SAP_B1_PASS` en `.env` y redeploy.
+### SAP (gateway centralizado)
+OrderLoader ya no tiene credenciales SAP crudas — habla con `sap-b1-backend` vía
+`SAP_BACKEND_URL` + `SAP_BACKEND_API_KEY`. Para rotar la API key del tenant: usar el
+mecanismo `{TENANT}_API_KEY_2` en el proyecto Vercel de sap-b1-backend (poner el valor
+nuevo en `_2`, actualizar este `.env`, recrear el contenedor con `--force-recreate` —
+un `docker restart` NO recarga el env_file — y después retirar el valor viejo).
 
 ## Troubleshooting
 - **Pipeline Logs**: `docker logs orderloader -f`

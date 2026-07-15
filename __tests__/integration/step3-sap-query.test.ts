@@ -8,9 +8,9 @@ import type Database from "better-sqlite3";
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockSapGet = vi.fn();
-vi.mock("@/lib/sap-client", () => ({
-  getSapClient: vi.fn().mockResolvedValue({ get: mockSapGet }),
-  clearSapClient: vi.fn(),
+vi.mock("@/lib/sap-gateway", () => ({
+  getActiveSap: vi.fn().mockResolvedValue({ get: mockSapGet }),
+  clearActiveSap: vi.fn(),
 }));
 
 vi.mock("@/lib/mailer", () => ({ sendAlertEmail: vi.fn().mockResolvedValue(undefined) }));
@@ -147,8 +147,8 @@ describe("step3-sap-query", () => {
   it("retorna error limpio cuando SAP no está disponible", async () => {
     insertTestPedido(_db, { orden_compra: "OC-SAP-DOWN", estado: "PARSE_VALIDO" });
 
-    const { getSapClient } = await import("@/lib/sap-client");
-    vi.mocked(getSapClient).mockRejectedValueOnce(new Error("Connection refused"));
+    const { getActiveSap } = await import("@/lib/sap-gateway");
+    vi.mocked(getActiveSap).mockRejectedValueOnce(new Error("Connection refused"));
 
     const { run } = await import("@/lib/steps/step3-sap-query");
     const result = await run();

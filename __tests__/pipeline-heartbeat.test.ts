@@ -17,9 +17,9 @@ vi.mock("@/lib/db", async (importOriginal) => {
   return { ...original, getDb: () => _db, backupDb: vi.fn(), migrate: vi.fn() };
 });
 vi.mock("@/lib/mailer", () => ({ sendAlertEmail: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/sap-client", () => ({
-  logoutSapClient: vi.fn().mockResolvedValue(undefined),
-  clearSapClient: vi.fn(),
+vi.mock("@/lib/sap-gateway", () => ({
+  getActiveSap: vi.fn(),
+  clearActiveSap: vi.fn(),
 }));
 vi.mock("@/lib/config", () => ({
   getConfig: () => ({ tenantDisplayName: "Test", tenant: "test" }),
