@@ -117,7 +117,7 @@ describe("step3-sap-query", () => {
     expect(JSON.parse(row.items_excluidos)).toContain("SKU-MISSING");
   });
 
-  it("no falla cuando SAP lanza un error HTTP en un artículo — lo excluye silenciosamente", async () => {
+  it("marca ERROR_SAP (no ERROR_CATALOG ni parcial) cuando la consulta de un artículo falla", async () => {
     const oc = "OC-CAT-004";
     setupPedidoWithFile(oc, ["SKU-OK", "SKU-ERROR"]);
 
@@ -131,9 +131,32 @@ describe("step3-sap-query", () => {
     const { run } = await import("@/lib/steps/step3-sap-query");
     const result = await run();
 
-    // SKU-ERROR excluido por error → CATALOG_OK con items_excluidos
-    expect(result.errores).toBe(0);
-    expect(result.procesados).toBe(1);
+    // Consulta fallida ≠ artículo inexistente: no se sube parcial, se reencola como ERROR_SAP
+    expect(result.errores).toBe(1);
+    expect(result.procesados).toBe(0);
+
+    const row = _db.prepare("SELECT estado, error_msg FROM pedidos_maestro WHERE orden_compra = ?").get(oc) as { estado: string; error_msg: string };
+    expect(row.estado).toBe("ERROR_SAP");
+    expect(row.error_msg).toContain("No se pudo verificar el catálogo SAP");
+    expect(row.error_msg).toContain("SKU-ERROR");
+    expect(row.error_msg).not.toContain("SKU-OK");
+  });
+
+  it("marca ERROR_SAP cuando TODAS las consultas fallan (p.ej. 401 del backend), no ERROR_CATALOG", async () => {
+    const oc = "OC-CAT-005";
+    setupPedidoWithFile(oc, ["SKU-A", "SKU-B"]);
+
+    // Escenario del incidente jul-2026: API key rotada → 401 en cada consulta
+    mockSapGet.mockRejectedValue(new Error("Backend GET /catalogo/alternates → 401: No autorizado"));
+
+    const { run } = await import("@/lib/steps/step3-sap-query");
+    const result = await run();
+
+    expect(result.errores).toBe(1);
+
+    const row = _db.prepare("SELECT estado, error_msg FROM pedidos_maestro WHERE orden_compra = ?").get(oc) as { estado: string; error_msg: string };
+    expect(row.estado).toBe("ERROR_SAP");
+    expect(row.error_msg).not.toContain("Ningún artículo existe en catálogo SAP");
   });
 
   it("sale limpiamente cuando no hay pedidos en PARSE_VALIDO", async () => {

@@ -2,11 +2,16 @@
  * Step 3: Verificar existencia de artículos en el catálogo de SAP B1.
  *
  * Consulta AlternateCatNum para cada SupplierCatNum del pedido.
- * Artículos que no existen en el catálogo se excluyen del pedido y se
- * guardan en items_excluidos para que step4 los omita al subir.
+ * Artículos confirmados como inexistentes en el catálogo se excluyen del
+ * pedido y se guardan en items_excluidos para que step4 los omita al subir.
  * Si ningún artículo existe → ERROR_CATALOG (no se puede subir nada).
  *
- * PARSE_VALIDO → CATALOG_OK | ERROR_CATALOG
+ * Si alguna consulta al catálogo FALLA (red/auth/5xx del backend o SAP), no se
+ * puede afirmar que el artículo no está homologado ni subir un pedido parcial:
+ * el pedido queda en ERROR_SAP (reintentable desde step3 con el botón del
+ * Dashboard). ERROR_CATALOG se reserva para "consultado OK y no existe".
+ *
+ * PARSE_VALIDO → CATALOG_OK | ERROR_CATALOG | ERROR_SAP
  */
 
 import fs from "fs";
@@ -133,13 +138,30 @@ export async function run(): Promise<StepResult> {
 
     try {
       const allCatNums = [...new Set(aiData.DocumentLines.map(l => l.SupplierCatNum))];
+      const erroredCatNums = new Set<string>();
       const itemMappings = await fetchCatNumMappings(sap, aiData.CardCode, allCatNums,
         (catNum, err) => {
+          erroredCatNums.add(catNum);
           logPipeline(db, oc, 3, "sap_catalog", "WARN",
-            `Error SAP consultando ${catNum} — excluido: ${errToMsg(err).slice(0, 500)}`);
-          result.detalles.push(`  ⚠ OC ${oc}: artículo ${catNum} excluido (error SAP al consultar)`);
+            `Error SAP consultando ${catNum}: ${errToMsg(err).slice(0, 500)}`);
+          result.detalles.push(`  ⚠ OC ${oc}: error SAP consultando artículo ${catNum}`);
         }
       );
+
+      // Consulta fallida ≠ artículo inexistente: sin respuesta del catálogo no se
+      // puede excluir el artículo ni subir un pedido parcial.
+      if (erroredCatNums.size > 0) {
+        const failedList = [...erroredCatNums].join(", ");
+        const msg = `No se pudo verificar el catálogo SAP (falló la consulta para: ${failedList}) — el pedido no se subió; reintente desde el Dashboard`;
+        db.prepare(`
+          UPDATE pedidos_maestro SET estado='ERROR_SAP', error_msg=?, fase_actual=3
+          WHERE orden_compra=?
+        `).run(msg.slice(0, 1000), oc);
+        logPipeline(db, oc, 3, "sap_catalog", "ERROR", msg.slice(0, 1000));
+        result.errores++;
+        result.detalles.push(`✗ OC ${oc} → ERROR_SAP: ${msg}`);
+        continue;
+      }
 
       const missing = aiData.DocumentLines.filter(l => !itemMappings.has(l.SupplierCatNum));
       const present = aiData.DocumentLines.filter(l =>  itemMappings.has(l.SupplierCatNum));

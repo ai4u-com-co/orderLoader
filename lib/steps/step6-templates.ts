@@ -125,13 +125,13 @@ function obtenerAccionRequerida(estado: string, errorMsg: string): string {
     case "ERROR_VALIDACION":
       return "<b>Acción Requerida:</b> Existen discrepancias de precios o cantidades entre el PDF y SAP. Ingrese al Dashboard para autorizar la orden con las diferencias o solicitar corrección al cliente.";
     case "ERROR_CATALOG":
-      return "<b>Acción Requerida:</b> Uno o más artículos no están homologados en el catálogo SAP de este socio de negocios. Ingrese a la sección 'Clientes' del Dashboard para registrar las equivalencias de SKU correspondiente.";
+      return "<b>Acción Requerida:</b> Uno o más artículos no están homologados en el catálogo SAP de este socio de negocios. Registre la equivalencia (código del cliente → artículo) directamente en SAP B1, en <i>Números de catálogo de socios de negocios</i>, y luego reintente el pedido desde el Dashboard.";
     case "ERROR_DUPLICADO":
       return "<b>Acción Requerida:</b> Este número de orden de compra ya existe en SAP. No se requiere acción si es un correo duplicado; si desea forzar una nueva carga, modifique el número de OC desde el Dashboard.";
     case "ERROR_REVISION_MANUAL":
       return `<b>Acción Requerida:</b> El correo no cumplió con los filtros automáticos (ej. no contiene PDFs adjuntos de pedidos). Fue movido a la carpeta de revisión manual (<b>${config.manualReviewFolderName}</b>) en el servidor de correo.`;
     case "ERROR_SAP":
-      return `<b>Acción Requerida:</b> SAP rechazó el documento debido al siguiente error: <i>${parseSapError(errorMsg)}</i>. Verifique el estado del socio de negocio o del artículo en SAP B1.`;
+      return `<b>Acción Requerida:</b> La operación en SAP falló con el siguiente error: <i>${parseSapError(errorMsg)}</i>. Si SAP rechazó el documento, verifique el estado del socio de negocios o del artículo en SAP B1; si fue un error de conexión o autenticación con el backend SAP, reintente el pedido desde el Dashboard.`;
     case "ERROR_PARSE":
       return "<b>Acción Requerida:</b> No se pudieron extraer los datos del PDF de manera estructurada. Verifique que el archivo no esté protegido por contraseña o que la calidad visual sea legible en el Dashboard.";
     case "ERROR_ITEMS":
@@ -418,8 +418,9 @@ export function buildHtmlForOrder(db: Database.Database, row: Record<string, unk
 </table>`;
 
   const dashboardUrl = process.env.DASHBOARD_URL || process.env.APP_URL || "http://localhost:3000";
-  const ctaUrl = estado === "ERROR_CATALOG" ? `${dashboardUrl}/clientes` : dashboardUrl;
-  const ctaButton = estado === "ERROR_CATALOG" ? buildCtaButton(ctaUrl, "Homologar Catálogo") : "";
+  // Las equivalencias se registran en SAP B1, no en el Dashboard — el botón lleva
+  // al listado de pedidos, donde vive el botón de reintentar.
+  const ctaButton = estado === "ERROR_CATALOG" ? buildCtaButton(dashboardUrl, "Abrir Dashboard") : "";
 
   const accionText = obtenerAccionRequerida(estado, String(row.error_msg ?? ""));
   const accionBox = accionText ? `
