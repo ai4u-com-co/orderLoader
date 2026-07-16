@@ -1,0 +1,40 @@
+name: Publish OrderLoader image to GHCR
+
+# Publica la imagen de OrderLoader en GitHub Container Registry para hosts que
+# no pueden buildear localmente (sin git, disco chico, etc.) — hoy: serverflexo
+# (equipo del cliente Flexo). Ese host corre Watchtower apuntando a esta imagen
+# y se actualiza solo cada vez que este workflow publica un :latest nuevo.
+#
+# No reemplaza a deploy.yml (VM de Tamaprint, que sigue con su propio
+# build+scp+load): este workflow es aditivo, mismo build recipe.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: |
+          docker build --platform linux/amd64 --provenance=false --sbom=false \
+            -t ghcr.io/donchelo/orderloader:latest \
+            -t ghcr.io/donchelo/orderloader:${{ github.sha }} \
+            .
+
+      - name: Push image
+        run: |
+          docker push ghcr.io/donchelo/orderloader:latest
+          docker push ghcr.io/donchelo/orderloader:${{ github.sha }}
