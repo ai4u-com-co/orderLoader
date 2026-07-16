@@ -1,13 +1,12 @@
 name: flexoimpresos-ol
 
+# El host de Flexo (serverflexo, Windows) corre esta imagen ya construida por
+# .github/workflows/publish-image.yml (ghcr.io/donchelo/orderloader) — Watchtower
+# la actualiza sola en cada push a main. No se buildea local en ese host.
+
 services:
   orderloader-flexo:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # Reenvia el ssh-agent del host para resolver deps privadas @ai4u/* (git+ssh)
-      ssh:
-        - default
+    image: ghcr.io/donchelo/orderloader:latest
     container_name: orderloader-flexo
     restart: unless-stopped
     ports:
@@ -33,3 +32,20 @@ services:
         limits:
           memory: 1g
           cpus: "1.0"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: orderloader-flexo-watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - TZ=America/Bogota
+      # El cliente Docker embebido en la imagen de Watchtower negocia API 1.25 por
+      # defecto; hosts con daemon reciente (>=1.40) lo rechazan.
+      - DOCKER_API_VERSION=1.44
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

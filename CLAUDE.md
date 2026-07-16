@@ -23,7 +23,11 @@ El sistema corre como **instancias separadas por cliente**, una por VM/container
 | TamaPrint | `tamaprint` (default) | IMAP / one.com | `.env` |
 | FlexoImpresos | `flexoimpresos` | Microsoft Graph (Office 365) | `.env.flexoimpresos` |
 
-Para deployar FlexoImpresos, copiar `.env.flexoimpresos` como `.env` en la VM correspondiente antes de correr el build.
+Cada compose ya apunta a su propio `env_file` (`docker-compose.yml` → `.env.tamaprint`, `docker-compose.flexoimpresos.yml` → `.env.flexoimpresos`); no hace falta copiar ni renombrar nada a `.env`.
+
+Deploy automático por push a `main` (sin build manual):
+- **Tamaprint** (VM GCP): `.github/workflows/deploy.yml` builda en el runner y despliega por SSH con rollback.
+- **FlexoImpresos** (serverflexo, equipo del cliente): `.github/workflows/publish-image.yml` publica `ghcr.io/donchelo/orderloader` y Watchtower en ese host la recrea sola (poll cada 5 min).
 
 No hay `tenant_id` en la BD — cada instancia tiene su propia base de datos aislada en `.data/`.
 
