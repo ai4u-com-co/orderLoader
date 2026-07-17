@@ -35,8 +35,9 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
     errores.push(`DocType inválido: '${order.DocType}' (esperado 'dDocument_Items')`);
   if (!cardCodeRegex.test(order.CardCode ?? ""))
     errores.push(`CardCode inválido: '${order.CardCode}' (debe ser ${cardCodePrefix} seguido de dígitos)`);
+  // Mínimo 1 char: hay clientes con OCs de numeración corta (ej. Maxiricos "OC 3")
   const numAtCardTrimmed = (order.NumAtCard ?? "").trim();
-  if (numAtCardTrimmed.length < 3 || numAtCardTrimmed.length > 100)
+  if (numAtCardTrimmed.length < 1 || numAtCardTrimmed.length > 100)
     errores.push(`NumAtCard inválido: '${order.NumAtCard}'`);
 
   // Fechas YYYYMMDD

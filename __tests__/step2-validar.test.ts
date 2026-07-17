@@ -76,9 +76,9 @@ describe("validarSapB1Json — CardCode", () => {
 // ── NumAtCard ─────────────────────────────────────────────────────────────────
 
 describe("validarSapB1Json — NumAtCard", () => {
-  it("rechaza NumAtCard de menos de 3 caracteres", () => {
-    const errs = validarSapB1Json(orderValido({ NumAtCard: "AB" }), "Hermeco");
-    expect(errs.some(e => e.includes("NumAtCard"))).toBe(true);
+  it("acepta NumAtCard corto (clientes con OCs de numeración baja, ej. '3')", () => {
+    expect(validarSapB1Json(orderValido({ NumAtCard: "3" }), "ComestiblesMaxiricos")).toEqual([]);
+    expect(validarSapB1Json(orderValido({ NumAtCard: "AB" }), "Hermeco")).toEqual([]);
   });
 
   it("rechaza NumAtCard vacío", () => {
