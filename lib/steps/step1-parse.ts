@@ -19,7 +19,7 @@ import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
 import { estimateCostUsd } from "../pricing";
 
-const PARSE_MODEL = "claude-sonnet-4-6";
+const PARSE_MODEL = "claude-sonnet-5";
 
 export interface StepResult {
   procesados: number;
@@ -54,10 +54,13 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
   const { pages } = await pdfToImages(pdfBuffer);
   const visionContent = buildVisionContent(pages);
 
+  // Sonnet 5 rechaza temperature no-default con 400 (a diferencia de 4.6, que sí la
+  // aceptaba) — se omite. output_config.effort:"high" es el default del modelo, se deja
+  // explícito porque esta extracción alimenta un upload automático a SAP en producción.
   const msg = await withAnthropicRetry(() => client.messages.create({
     model: PARSE_MODEL,
     max_tokens: 8192,
-    temperature: 0,
+    output_config: { effort: "high" },
     system: prompt,
     messages: [{ role: "user", content: visionContent }],
   }));
