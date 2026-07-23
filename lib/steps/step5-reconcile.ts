@@ -13,6 +13,7 @@ import path from "path";
 import { getDb, logPipeline, errToMsg } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
+import type { DocumentLine } from "../schemas";
 import { OrderStatus } from "../constants";
 
 export interface StepResult {
@@ -28,14 +29,64 @@ interface Diferencia {
   sap: string | number;
 }
 
-function yyyymmddToIso(d: string): string {
+export function yyyymmddToIso(d: string): string {
   if (/^\d{8}$/.test(d)) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
   return d;
 }
 
-function normalizeDate(d: string): string {
+export function normalizeDate(d: string): string {
   // SAP devuelve "2026-03-24T00:00:00Z" o "2026-03-24" — quedarnos solo con YYYY-MM-DD
   return String(d ?? "").slice(0, 10);
+}
+
+export interface PdfSapLinePair {
+  pdfLine: DocumentLine;
+  sapLine: Record<string, unknown> | null;
+}
+
+/**
+ * Empareja cada línea del PDF con, a lo sumo, una línea SAP — nunca la misma línea
+ * SAP dos veces. Sin esto, dos líneas PDF con el mismo SupplierCatNum (entrega
+ * parcial en fechas distintas — ver step2-validate-parse.ts) terminan comparadas
+ * contra la MISMA primera línea SAP encontrada, generando diferencias falsas en
+ * unas y enmascarando diferencias reales en otras (ver FLX-052). Prioriza el match
+ * por (código, fecha de entrega efectiva) antes de caer a "cualquier línea SAP
+ * libre con ese código".
+ */
+export function pairPdfAndSapLines(
+  pdfLines: DocumentLine[],
+  sapLines: Array<Record<string, unknown>>,
+  docDueDate: string,
+): PdfSapLinePair[] {
+  const normCat = (s: string) => String(s ?? "").replace(/^0+/, "") || "0";
+  const usedSapIdx = new Set<number>();
+
+  const findSapLine = (pdfCat: string, pdfShipDate: string): Record<string, unknown> | null => {
+    const libres = sapLines
+      .map((l, idx) => ({ l, idx }))
+      .filter(({ idx }) => !usedSapIdx.has(idx));
+
+    // Match exacto por código; si no hay, sin ceros iniciales en ambos lados —
+    // soporta clientes donde SAP guarda códigos CON ceros (ej: "0021446") y
+    // clientes donde SAP guarda sin ceros (ej: "14007383001").
+    const mismoCodigo = libres.filter(
+      ({ l }) => String(l.SupplierCatNum ?? "") === pdfCat
+              || normCat(String(l.SupplierCatNum ?? "")) === normCat(pdfCat)
+    );
+    if (!mismoCodigo.length) return null;
+
+    const mismoCodigoYFecha = mismoCodigo.find(
+      ({ l }) => normalizeDate(String(l.ShipDate ?? "")) === pdfShipDate
+    );
+    const match = mismoCodigoYFecha ?? mismoCodigo[0];
+    usedSapIdx.add(match.idx);
+    return match.l;
+  };
+
+  return pdfLines.map(pdfLine => {
+    const pdfShipDate = normalizeDate(yyyymmddToIso(pdfLine.DeliveryDate ?? docDueDate));
+    return { pdfLine, sapLine: findSapLine(String(pdfLine.SupplierCatNum), pdfShipDate) };
+  });
 }
 
 export async function run(): Promise<StepResult> {
@@ -141,18 +192,11 @@ export async function run(): Promise<StepResult> {
       }
 
       // ── Comparar cada línea por SupplierCatNum ───────────────────────────
-      // Primero intenta match exacto; si no hay, intenta sin ceros iniciales en ambos lados.
-      // Esto soporta clientes donde SAP guarda códigos CON ceros (ej: "0021446") y
-      // clientes donde SAP guarda sin ceros (ej: "14007383001").
-      const normCat = (s: string) => String(s ?? "").replace(/^0+/, "") || "0";
-      const findSapLine = (pdfCat: string) => {
-        const exact = sapLines.find(l => String(l.SupplierCatNum ?? "") === pdfCat);
-        if (exact) return exact;
-        return sapLines.find(l => normCat(String(l.SupplierCatNum ?? "")) === normCat(pdfCat));
-      };
+      // Ver pairPdfAndSapLines() arriba: empareja 1 a 1, priorizando (código, fecha
+      // de entrega) para no confundir líneas cuando el mismo código se repite.
+      const pares = pairPdfAndSapLines(pdfLinesActivas, sapLines, pdfData.DocDueDate);
 
-      for (const pdfLine of pdfLinesActivas) {
-        const sapLine = findSapLine(String(pdfLine.SupplierCatNum));
+      for (const { pdfLine, sapLine } of pares) {
         if (!sapLine) {
           diferencias.push({
             campo: `Artículo faltante en SAP`,
