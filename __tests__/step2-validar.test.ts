@@ -178,3 +178,47 @@ describe("validarSapB1Json — SupplierCatNum con cero inicial", () => {
     expect(validarSapB1Json(orderValido({ DocumentLines: lineConCero }), "PRODUEMPAK")).toEqual([]);
   });
 });
+
+// ── Código de catálogo repetido (FLX-052) ──────────────────────────────────────
+
+describe("validarSapB1Json — SupplierCatNum repetido en el mismo pedido", () => {
+  it("rechaza el mismo código dos veces con la misma fecha de entrega de línea", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "0019062", Quantity: 2700000, UnitPrice: 9.66, DeliveryDate: "20260805" },
+          { SupplierCatNum: "0019062", Quantity: 250, UnitPrice: 31399.4, DeliveryDate: "20260805" },
+        ],
+      }),
+      "NewStetic"
+    );
+    expect(errs.some(e => e.includes("código repetido"))).toBe(true);
+  });
+
+  it("rechaza el mismo código dos veces cuando ninguna línea trae fecha propia (caen ambas al DocDueDate general)", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocDueDate: "20260805",
+        DocumentLines: [
+          { SupplierCatNum: "0019063", Quantity: 2700000, UnitPrice: 9.66 },
+          { SupplierCatNum: "0019063", Quantity: 250, UnitPrice: 31399.4 },
+        ],
+      }),
+      "NewStetic"
+    );
+    expect(errs.some(e => e.includes("código repetido"))).toBe(true);
+  });
+
+  it("permite el mismo código repetido cuando las fechas de entrega son distintas (entrega parcial legítima)", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "A001", Quantity: 100, DeliveryDate: "20260801" },
+          { SupplierCatNum: "A001", Quantity: 200, DeliveryDate: "20260901" },
+        ],
+      }),
+      "Hermeco"
+    );
+    expect(errs).toEqual([]);
+  });
+});
