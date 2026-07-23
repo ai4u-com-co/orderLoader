@@ -64,7 +64,11 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
     return errores;
   }
 
-  const vistos = new Set<string>();
+  // Mismo código de catálogo + misma fecha de entrega en 2 líneas es indicio de error de
+  // lectura del PDF (el AI mezcló columnas de una fila con las de otra) — ver FLX-052.
+  // Una repetición legítima del mismo artículo casi siempre viene con fecha de entrega
+  // distinta (entrega parcial escalonada), así que esa combinación sí se permite.
+  const vistos = new Map<string, number>(); // `${SupplierCatNum}::${fechaEfectiva}` → línea donde se vio primero
   for (let i = 0; i < order.DocumentLines.length; i++) {
     const line = order.DocumentLines[i];
     const ref = `Línea ${i + 1}`;
@@ -73,9 +77,17 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
     if (!line.SupplierCatNum?.trim()) {
       errores.push(`${ref}: SupplierCatNum vacío`);
     } else {
-      vistos.add(line.SupplierCatNum);
       if (line.SupplierCatNum.startsWith("0") && ["Hermeco", "Comodin"].includes(_clienteNombre)) {
         errores.push(`${ref} (${line.SupplierCatNum}): SupplierCatNum no puede tener cero inicial para el cliente ${_clienteNombre}`);
+      }
+
+      const fechaEfectiva = line.DeliveryDate ?? order.DocDueDate ?? "";
+      const key = `${line.SupplierCatNum}::${fechaEfectiva}`;
+      const primeraLinea = vistos.get(key);
+      if (primeraLinea != null) {
+        errores.push(`${ref} (${line.SupplierCatNum}): código repetido en Línea ${primeraLinea} con la misma fecha de entrega — revisar si el PDF mezcló datos de ambas filas`);
+      } else {
+        vistos.set(key, i + 1);
       }
     }
 
