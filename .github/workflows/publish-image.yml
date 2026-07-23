@@ -21,6 +21,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      # ghcr.io autoriza el push del GITHUB_TOKEN solo contra paquetes del owner
+      # actual del repo — hardcodear el owner rompe el push en la próxima
+      # migración (pasó jul-2026: donchelo → ai4u-com-co, ver commit que agregó
+      # este comentario). repository_owner ya viene en minúsculas.
+      IMAGE: ghcr.io/${{ github.repository_owner }}/orderloader
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +36,11 @@ jobs:
       - name: Build image
         run: |
           docker build --platform linux/amd64 --provenance=false --sbom=false \
-            -t ghcr.io/donchelo/orderloader:latest \
-            -t ghcr.io/donchelo/orderloader:${{ github.sha }} \
+            -t ${{ env.IMAGE }}:latest \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
             .
 
       - name: Push image
         run: |
-          docker push ghcr.io/donchelo/orderloader:latest
-          docker push ghcr.io/donchelo/orderloader:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
