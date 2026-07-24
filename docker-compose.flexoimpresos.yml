@@ -1,12 +1,12 @@
 name: flexoimpresos-ol
 
 # El host de Flexo (serverflexo, Windows) corre esta imagen ya construida por
-# .github/workflows/publish-image.yml (ghcr.io/donchelo/orderloader) — Watchtower
-# la actualiza sola en cada push a main. No se buildea local en ese host.
+# .github/workflows/publish-image.yml (ghcr.io/ai4u-com-co/orderloader) —
+# Watchtower la actualiza sola en cada push a main. No se buildea local en ese host.
 
 services:
   orderloader-flexo:
-    image: ghcr.io/donchelo/orderloader:latest
+    image: ghcr.io/ai4u-com-co/orderloader:latest
     container_name: orderloader-flexo
     restart: unless-stopped
     ports:
@@ -34,6 +34,13 @@ services:
           cpus: "1.0"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+      # serverflexo corre otros proyectos (ej. trade4u) con su propio Watchtower en
+      # el mismo daemon Docker. Watchtower detecta instancias hermanas por el label
+      # que se pone abajo en su propio contenedor y AUTOAPAGA una de las dos para
+      # evitar que compitan — pasó el 21-jul-2026, dejando este contenedor sin
+      # ningún Watchtower vigilándolo por días. El scope aísla la detección de
+      # duplicados por proyecto, sin tocar la config de los otros proyectos del host.
+      - "com.centurylinklabs.watchtower.scope=orderloader-flexo"
 
   watchtower:
     image: containrrr/watchtower:latest
@@ -43,9 +50,19 @@ services:
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_SCOPE=orderloader-flexo
       - TZ=America/Bogota
       # El cliente Docker embebido en la imagen de Watchtower negocia API 1.25 por
       # defecto; hosts con daemon reciente (>=1.40) lo rechazan.
       - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # El paquete GHCR es privado (bloqueado por política de la org ai4u-com-co,
+      # no se puede hacer público) — Watchtower necesita las mismas credenciales
+      # que se usaron para el pull manual (config.json sin credsStore, para evitar
+      # el Credential Manager de Windows que falla en sesión no interactiva) o sus
+      # futuros chequeos automáticos fallarán con "unauthorized" apenas se publique
+      # una imagen nueva. Vive junto al compose (no en el home del usuario) porque
+      # Docker Desktop en este host solo tiene compartida esta carpeta — un mount
+      # a C:\Users\<usuario>\... da "Access is denied" al crear el contenedor.
+      - ./.ghcr-auth.json:/config.json:ro

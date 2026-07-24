@@ -53,3 +53,6 @@ project.tar.gz
 # Directorio de experimentación local — no debe commitearse
 /scratch/
 .claude/
+
+# Credenciales de GHCR montadas para Watchtower en serverflexo (paquete privado)
+.ghcr-auth.json
