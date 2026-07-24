@@ -57,3 +57,12 @@ services:
       - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # El paquete GHCR es privado (bloqueado por política de la org ai4u-com-co,
+      # no se puede hacer público) — Watchtower necesita las mismas credenciales
+      # que se usaron para el pull manual (config.json sin credsStore, para evitar
+      # el Credential Manager de Windows que falla en sesión no interactiva) o sus
+      # futuros chequeos automáticos fallarán con "unauthorized" apenas se publique
+      # una imagen nueva. Vive junto al compose (no en el home del usuario) porque
+      # Docker Desktop en este host solo tiene compartida esta carpeta — un mount
+      # a C:\Users\<usuario>\... da "Access is denied" al crear el contenedor.
+      - ./.ghcr-auth.json:/config.json:ro
