@@ -282,13 +282,27 @@ async function checkStuckPipelineStates(): Promise<void> {
 }
 
 // ── Alerta: tasa de errores alta ─────────────────────────────────────────────
+// Solo alerta cuando DOS corridas seguidas terminan con 100% de error — una corrida
+// aislada al 100% suele ser un PDF puntual de un cliente (no un bug sistémico), y
+// alertar en cada una inundó el mismo inbox de notificaciones del pipeline durante el
+// incidente 2026-07-24→27 hasta el punto de perderse (ver bug_sonnet5_thinking_content0).
 async function alertIfHighErrorRate(results: StepResult[]): Promise<void> {
   const totals = results.reduce(
     (acc, r) => ({ ok: acc.ok + r.procesados, err: acc.err + r.errores }),
     { ok: 0, err: 0 },
   );
   const total = totals.ok + totals.err;
-  if (total === 0 || totals.err / total < 0.5) return;
+  const db = getDb();
+  const isFullFailure = total > 0 && totals.err === total;
+
+  const prevRow = db
+    .prepare(`SELECT mensaje FROM pipeline_log WHERE fase_nombre = 'error_rate' ORDER BY id DESC LIMIT 1`)
+    .get() as { mensaje: string } | undefined;
+  const prevWasFullFailure = prevRow?.mensaje === "full_failure";
+
+  logPipeline(db, null, 0, "error_rate", "OK", isFullFailure ? "full_failure" : "ok");
+
+  if (!isFullFailure || !prevWasFullFailure) return;
 
   const lines = results
     .filter(r => r.errores > 0)
@@ -297,8 +311,10 @@ async function alertIfHighErrorRate(results: StepResult[]): Promise<void> {
 
   const { tenantDisplayName } = getConfig();
   await sendAlertEmail(
-    `[OrderLoader/${tenantDisplayName}] ✗ Alta tasa de errores — ${totals.err}/${total} órdenes fallaron`,
-    `<p>El pipeline terminó con <strong>${totals.err} de ${total}</strong> órdenes en error (>${Math.round(totals.err / total * 100)}%).</p>
+    `[OrderLoader/${tenantDisplayName}] ✗ Alta tasa de errores — 2 corridas seguidas al 100%`,
+    `<p>El pipeline lleva <strong>2 corridas seguidas con el 100% de las órdenes en error</strong>
+     (última: ${totals.err}/${total}). Esto suele indicar un bug del sistema, no un PDF puntual —
+     revisar cuanto antes.</p>
      <ul>${lines}</ul>
      <p>Revisar logs para más detalle.</p>`,
   ).catch(() => {});
