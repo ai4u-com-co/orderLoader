@@ -14,6 +14,7 @@ import { OrderStatus } from "../constants";
 import { SapB1OrderSchema, type SapB1Order } from "../schemas";
 export type { SapB1Order };
 import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb } from "../pdf-classify";
+import type { TriageResult } from "../ai-triage";
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
@@ -40,6 +41,27 @@ function todayYYYYMMDD(offsetDays = 0): string {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * El triage IA (step0) ya clasifica cada adjunto por tipo, con razón, antes de
+ * copiarlo a la carpeta del cliente — 'documento_relevante' es la clasificación
+ * donde el triage está seguro de que NO es una orden de compra (ej. comprobante
+ * de pago). Reusar ese veredicto evita gastar una llamada al modelo que sabemos
+ * de antemano que va a fallar: el prompt de extracción de OC no contempla ese
+ * caso y suele forzar un JSON con campos vacíos en vez de negarse con texto
+ * (ver bug real NewStetic 2026-07-27 — el modelo devolvió NumAtCard:"" y
+ * DocumentLines:[] porque su prompt le prohíbe escribir cualquier explicación).
+ */
+export function getTriageTipo(carpetaPath: string, pdfFile: string): TriageResult | null {
+  const metaPath = path.join(carpetaPath, "correo_metadata.json");
+  if (!fs.existsSync(metaPath)) return null;
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) as { triage_ia?: TriageResult[] };
+    return meta.triage_ia?.find(t => t.filename === pdfFile) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ── AI Parser ─────────────────────────────────────────────────────────────────
@@ -296,6 +318,19 @@ export async function run(): Promise<StepResult> {
         if (fs.existsSync(errorPath)) {
           result.saltados++;
           fs.writeFileSync(doneMarker, "error");  // siguiente corrida usa el check silencioso de línea 260
+          continue;
+        }
+
+        // El triage IA de step0 ya identificó este adjunto como "no es una OC" con
+        // una razón concreta — no gastar una llamada al modelo para que llegue a la
+        // misma conclusión de peor manera (JSON con campos vacíos, ver getTriageTipo).
+        const triage = getTriageTipo(carpetaPath, pdfFile);
+        if (triage?.tipo === "documento_relevante") {
+          result.errores++;
+          result.detalles.push(`  → Triage: no es una OC — ${triage.razon}`);
+          logPipeline(db, carpetaNombre, 1, "parse", "ERROR", `${pdfFile}: triage clasificó como documento_relevante — ${triage.razon}`);
+          fs.writeFileSync(skipMarker, "triage-not-po");
+          registerParseErrorInDb(db, carpetaPath, carpetaNombre, pdfFile, triage.cliente ?? carpeta, `Adjunto no es una OC — requiere revisión manual: ${triage.razon}`);
           continue;
         }
 
