@@ -17,6 +17,7 @@ import { detectClientFromPdf, esDirigidoAEmpresa, loadClientListsFromDb } from "
 import { getClientes } from "../db";
 import { pdfToImages, buildVisionContent } from "../pdf-vision";
 import { withAnthropicRetry } from "../anthropic-retry";
+import { extractResponseText } from "../anthropic-content";
 import { estimateCostUsd } from "../pricing";
 
 const PARSE_MODEL = "claude-sonnet-5";
@@ -65,7 +66,7 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
     messages: [{ role: "user", content: visionContent }],
   }));
 
-  const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
+  const text = extractResponseText(msg.content);
   const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
   if (!text) return [null, "Respuesta vacía del modelo", usage];
 

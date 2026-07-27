@@ -10,6 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { withAnthropicRetry } from "./anthropic-retry";
+import { extractResponseText } from "./anthropic-content";
 
 export type AttachmentTipo = 'orden_compra' | 'firma_logo' | 'documento_relevante' | 'desconocido';
 
@@ -163,7 +164,7 @@ export async function triageEmailAttachments(
     const inputTokens = msg.usage?.input_tokens ?? 0;
     const outputTokens = msg.usage?.output_tokens ?? 0;
 
-    const raw = msg.content[0].type === 'text' ? msg.content[0].text.trim() : '';
+    const raw = extractResponseText(msg.content);
     const clean = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
 
     const parsed = JSON.parse(clean);
