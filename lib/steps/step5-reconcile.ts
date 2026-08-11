@@ -5,6 +5,11 @@
  * Registra todas las diferencias (artículos faltantes, cantidades, precios)
  * en validacion_resultado para que step6 las incluya en la notificación.
  *
+ * FLX-059: las líneas sustituidas por el artículo genérico (items_placeholder,
+ * ver step3-sap-query.ts) no se comparan línea a línea — su SupplierCatNum en
+ * SAP es el del genérico, no el del PDF — se reportan aparte como "Pendiente
+ * de revisión (artículo genérico)".
+ *
  * SAP_MONTADO → VALIDADO | ERROR_VALIDACION
  */
 
@@ -165,9 +170,24 @@ export async function run(): Promise<StepResult> {
         });
       }
 
-      // Líneas del PDF sin los ítems que fueron excluidos en el upload
+      // ── FLX-059: artículos sustituidos por el genérico en step3 ─────────
+      // Su línea en SAP tiene el código del genérico, no el del PDF — comparar por
+      // SupplierCatNum original solo generaría un falso "Artículo faltante en SAP".
+      const itemsPlaceholderCodes: string[] = row.items_placeholder
+        ? JSON.parse(String(row.items_placeholder))
+        : [];
+      for (const code of itemsPlaceholderCodes) {
+        diferencias.push({
+          campo: `Pendiente de revisión (artículo genérico)`,
+          pdf: code,
+          sap: "montado con artículo genérico — pendiente de identificar la referencia real",
+        });
+      }
+
+      // Líneas del PDF sin los ítems que fueron excluidos o sustituidos por genérico
       const pdfLinesActivas = pdfData.DocumentLines.filter(
         l => !itemsExcluidosCodes.includes(String(l.SupplierCatNum))
+          && !itemsPlaceholderCodes.includes(String(l.SupplierCatNum))
       );
 
       // ── Comparar cabecera ────────────────────────────────────────────────
@@ -183,10 +203,13 @@ export async function run(): Promise<StepResult> {
       }
 
       // ── Comparar cantidad de líneas (sin excluidos, sin líneas de texto SAP) ──
-      if (pdfLinesActivas.length !== sapLines.length) {
+      // Las líneas placeholder SÍ están montadas en SAP (con el código genérico),
+      // así que cuentan para el total esperado aunque no estén en pdfLinesActivas.
+      const totalPdfEsperado = pdfLinesActivas.length + itemsPlaceholderCodes.length;
+      if (totalPdfEsperado !== sapLines.length) {
         diferencias.push({
           campo: "líneas totales",
-          pdf: pdfLinesActivas.length,
+          pdf: totalPdfEsperado,
           sap: sapLines.length,
         });
       }

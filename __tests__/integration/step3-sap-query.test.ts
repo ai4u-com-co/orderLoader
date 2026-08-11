@@ -25,13 +25,16 @@ vi.mock("@/lib/db", async (importOriginal) => {
   };
 });
 
+const baseTestConfig = {
+  pedidosRawDir: "/tmp/test-raw",
+  cardCodePrefix: "CN",
+  tenant: "tamaprint",
+  tenantDisplayName: "Tamaprint",
+  genericPlaceholderItemCode: undefined as string | undefined,
+};
+const mockGetConfig = vi.fn(() => baseTestConfig);
 vi.mock("@/lib/config", () => ({
-  getConfig: () => ({
-    pedidosRawDir: "/tmp/test-raw",
-    cardCodePrefix: "CN",
-    tenant: "tamaprint",
-    tenantDisplayName: "Tamaprint",
-  }),
+  getConfig: () => mockGetConfig(),
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +46,7 @@ describe("step3-sap-query", () => {
     _db = createTestDb();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "step3-"));
     vi.clearAllMocks();
+    mockGetConfig.mockReturnValue({ ...baseTestConfig, genericPlaceholderItemCode: undefined });
   });
 
   afterEach(() => {
@@ -179,5 +183,66 @@ describe("step3-sap-query", () => {
     expect(result.procesados).toBe(0);
     // El step maneja la falla de conexión SAP sin lanzar
     expect(result.detalles.some(d => /SAP no configurado|Connection refused/i.test(d))).toBe(true);
+  });
+
+  // ── FLX-059: artículo genérico placeholder (solo Flexo) ──────────────────
+  describe("con GENERIC_PLACEHOLDER_ITEM_CODE configurado (Flexo)", () => {
+    beforeEach(() => {
+      mockGetConfig.mockReturnValue({ ...baseTestConfig, tenant: "flexoimpresos", genericPlaceholderItemCode: "102296" });
+    });
+
+    it("marca CATALOG_OK (nunca ERROR_CATALOG) cuando ningún artículo existe en catálogo", async () => {
+      const oc = "OC-PH-001";
+      setupPedidoWithFile(oc, ["SKU-NEW-1", "SKU-NEW-2"]);
+
+      mockSapGet.mockResolvedValue({ value: [] });
+
+      const { run } = await import("@/lib/steps/step3-sap-query");
+      const result = await run();
+
+      expect(result.errores).toBe(0);
+      expect(result.procesados).toBe(1);
+
+      const row = _db.prepare("SELECT estado, items_excluidos, items_placeholder FROM pedidos_maestro WHERE orden_compra = ?")
+        .get(oc) as { estado: string; items_excluidos: string | null; items_placeholder: string };
+      expect(row.estado).toBe("CATALOG_OK");
+      expect(row.items_excluidos).toBeNull();
+      expect(JSON.parse(row.items_placeholder)).toEqual(["SKU-NEW-1", "SKU-NEW-2"]);
+    });
+
+    it("sustituye solo la línea sin match cuando el resto sí matchea (pedido mixto)", async () => {
+      const oc = "OC-PH-002";
+      setupPedidoWithFile(oc, ["SKU-EXISTS", "SKU-NEW"]);
+
+      mockSapGet.mockImplementation((_: string, params: Record<string, string>) => {
+        if (params["$filter"]?.includes("SKU-EXISTS")) {
+          return Promise.resolve({ value: [{ ItemCode: "ITEM-001" }] });
+        }
+        return Promise.resolve({ value: [] });
+      });
+
+      const { run } = await import("@/lib/steps/step3-sap-query");
+      const result = await run();
+
+      expect(result.procesados).toBe(1);
+      const row = _db.prepare("SELECT estado, items_excluidos, items_placeholder FROM pedidos_maestro WHERE orden_compra = ?")
+        .get(oc) as { estado: string; items_excluidos: string | null; items_placeholder: string };
+      expect(row.estado).toBe("CATALOG_OK");
+      expect(row.items_excluidos).toBeNull();
+      expect(JSON.parse(row.items_placeholder)).toEqual(["SKU-NEW"]);
+    });
+
+    it("no toca items_placeholder cuando todos los artículos matchean", async () => {
+      const oc = "OC-PH-003";
+      setupPedidoWithFile(oc, ["SKU-A", "SKU-B"]);
+      mockSapGet.mockResolvedValue({ value: [{ ItemCode: "ITEM-X" }] });
+
+      const { run } = await import("@/lib/steps/step3-sap-query");
+      await run();
+
+      const row = _db.prepare("SELECT items_placeholder FROM pedidos_maestro WHERE orden_compra = ?")
+        .get(oc) as { items_placeholder: string | null };
+      expect(row.items_placeholder).toBeNull();
+    });
   });
 });
