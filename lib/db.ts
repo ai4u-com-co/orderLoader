@@ -29,6 +29,7 @@ export interface PedidoMaestro {
   sap_query_resultado: string | null;
   validacion_resultado: string | null;
   items_excluidos: string | null;
+  items_placeholder: string | null;
   error_msg: string | null;
   carpeta_origen: string | null;
   notificacion_enviada: number | null;
@@ -120,6 +121,7 @@ export function migrate(): void {
       sap_query_resultado   TEXT,
       validacion_resultado  TEXT,
       items_excluidos       TEXT,
+      items_placeholder     TEXT,
       error_msg             TEXT,
       carpeta_origen        TEXT
     );
@@ -209,6 +211,7 @@ export function migrate(): void {
     { name: "004_add_log_model",            sql: `ALTER TABLE pipeline_log ADD COLUMN model TEXT` },
     { name: "005_add_notificacion_enviada", sql: `ALTER TABLE pedidos_maestro ADD COLUMN notificacion_enviada INTEGER DEFAULT 0` },
     { name: "006_add_costo_ia_usd",         sql: `ALTER TABLE pedidos_maestro ADD COLUMN costo_ia_usd REAL` },
+    { name: "007_add_items_placeholder",    sql: `ALTER TABLE pedidos_maestro ADD COLUMN items_placeholder TEXT` },
   ];
 
   for (const m of migrations) {

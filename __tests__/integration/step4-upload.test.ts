@@ -26,14 +26,17 @@ vi.mock("@/lib/db", async (importOriginal) => {
   };
 });
 
+const baseTestConfig = {
+  pedidosRawDir: "/tmp/test-raw",
+  cardCodePrefix: "CN",
+  tenant: "tamaprint",
+  tenantDisplayName: "Tamaprint",
+  notifyAlertasEmail: "alertas@test.com",
+  genericPlaceholderItemCode: undefined as string | undefined,
+};
+const mockGetConfig = vi.fn(() => baseTestConfig);
 vi.mock("@/lib/config", () => ({
-  getConfig: () => ({
-    pedidosRawDir: "/tmp/test-raw",
-    cardCodePrefix: "CN",
-    tenant: "tamaprint",
-    tenantDisplayName: "Tamaprint",
-    notifyAlertasEmail: "alertas@test.com",
-  }),
+  getConfig: () => mockGetConfig(),
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +48,7 @@ describe("step4-upload", () => {
     _db = createTestDb();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "step4-"));
     vi.clearAllMocks();
+    mockGetConfig.mockReturnValue({ ...baseTestConfig, genericPlaceholderItemCode: undefined });
   });
 
   afterEach(() => {
@@ -139,5 +143,59 @@ describe("step4-upload", () => {
 
     expect(result.procesados).toBe(3);
     expect(result.errores).toBe(0);
+  });
+
+  // ── FLX-059: artículo genérico placeholder (solo Flexo) ──────────────────
+  describe("con GENERIC_PLACEHOLDER_ITEM_CODE configurado (Flexo)", () => {
+    beforeEach(() => {
+      mockGetConfig.mockReturnValue({ ...baseTestConfig, tenant: "flexoimpresos", genericPlaceholderItemCode: "102296" });
+    });
+
+    it("sube la línea placeholder con el ItemCode genérico, la cantidad real y el aviso en FreeText", async () => {
+      const oc = "OC-PH-UP-001";
+      setupPedidoCatalogOk(oc, ["SKU-EXISTS", "SKU-NEW"]);
+      _db.prepare("UPDATE pedidos_maestro SET items_placeholder = ? WHERE orden_compra = ?")
+        .run(JSON.stringify(["SKU-NEW"]), oc);
+
+      mockSapPost.mockResolvedValue({ DocEntry: 555, DocNum: "77" });
+
+      const { run } = await import("@/lib/steps/step4-upload");
+      const result = await run();
+
+      expect(result.procesados).toBe(1);
+      expect(result.errores).toBe(0);
+
+      const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
+      expect(payload.DocumentLines).toHaveLength(2);
+
+      const original = payload.DocumentLines.find(l => l.SupplierCatNum === "SKU-EXISTS");
+      expect(original).toBeTruthy();
+
+      const placeholder = payload.DocumentLines.find(l => l.SupplierCatNum === "102296");
+      expect(placeholder).toBeTruthy();
+      expect(placeholder!.Quantity).toBe(10); // cantidad real del fixture (buildSapOrderFixture)
+      expect(String(placeholder!.FreeText)).toContain("Ojo revisar referencia");
+      expect(String(placeholder!.FreeText)).toContain("SKU-NEW");
+
+      const row = _db.prepare("SELECT estado FROM pedidos_maestro WHERE orden_compra = ?").get(oc) as { estado: string };
+      expect(row.estado).toBe("SAP_MONTADO");
+    });
+
+    it("sube TODAS las líneas como placeholder cuando ninguna matcheó catálogo", async () => {
+      const oc = "OC-PH-UP-002";
+      setupPedidoCatalogOk(oc, ["SKU-A", "SKU-B"]);
+      _db.prepare("UPDATE pedidos_maestro SET items_placeholder = ? WHERE orden_compra = ?")
+        .run(JSON.stringify(["SKU-A", "SKU-B"]), oc);
+
+      mockSapPost.mockResolvedValue({ DocEntry: 556, DocNum: "78" });
+
+      const { run } = await import("@/lib/steps/step4-upload");
+      const result = await run();
+
+      expect(result.procesados).toBe(1);
+      const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
+      expect(payload.DocumentLines).toHaveLength(2);
+      expect(payload.DocumentLines.every(l => l.SupplierCatNum === "102296")).toBe(true);
+    });
   });
 });

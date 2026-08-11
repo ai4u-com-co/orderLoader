@@ -33,6 +33,7 @@ export function createTestDb(): Database.Database {
       sap_query_resultado   TEXT,
       validacion_resultado  TEXT,
       items_excluidos       TEXT,
+      items_placeholder     TEXT,
       error_msg             TEXT,
       carpeta_origen        TEXT,
       notificacion_enviada  INTEGER DEFAULT 0,

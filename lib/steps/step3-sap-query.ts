@@ -6,6 +6,12 @@
  * pedido y se guardan en items_excluidos para que step4 los omita al subir.
  * Si ningún artículo existe → ERROR_CATALOG (no se puede subir nada).
  *
+ * FLX-059: si el tenant tiene Config.genericPlaceholderItemCode configurado
+ * (hoy solo Flexoimpresos), las líneas sin match NO se excluyen: se sustituyen
+ * por el artículo genérico (ver lib/catalog-fallback.ts) y quedan en
+ * items_placeholder. El pedido nunca llega a ERROR_CATALOG por esta causa.
+ * Tamaprint (sin la config) mantiene el comportamiento de siempre.
+ *
  * Si alguna consulta al catálogo FALLA (red/auth/5xx del backend o SAP), no se
  * puede afirmar que el artículo no está homologado ni subir un pedido parcial:
  * el pedido queda en ERROR_SAP (reintentable desde step3 con el botón del
@@ -21,6 +27,8 @@ import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapGateway } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
+import { getConfig } from "../config";
+import { resolveUnmatchedLine } from "../catalog-fallback";
 
 export interface StepResult {
   procesados: number;
@@ -166,43 +174,60 @@ export async function run(): Promise<StepResult> {
       const missing = aiData.DocumentLines.filter(l => !itemMappings.has(l.SupplierCatNum));
       const present = aiData.DocumentLines.filter(l =>  itemMappings.has(l.SupplierCatNum));
 
+      // FLX-059: si el tenant tiene artículo genérico configurado, TODA línea sin
+      // match se sustituye por el placeholder — el pedido nunca queda sin subir por
+      // catálogo. Sin la config (Tamaprint), comportamiento 100% igual a hoy: excluir.
+      const config = getConfig();
+      const placeholderCodes: string[] = [];
+      const excluded: typeof missing = [];
       for (const m of missing) {
-        logPipeline(db, oc, 3, "sap_catalog", "WARN",
-          `Artículo ${m.SupplierCatNum} no existe en AlternateCatNum — excluido`);
-        result.detalles.push(`  ⚠ OC ${oc}: artículo ${m.SupplierCatNum} no existe en catálogo SAP — excluido`);
+        if (resolveUnmatchedLine(config, m)) {
+          placeholderCodes.push(m.SupplierCatNum);
+          logPipeline(db, oc, 3, "sap_catalog", "WARN",
+            `Artículo ${m.SupplierCatNum} no existe en catálogo — sustituido por artículo genérico pendiente de revisión`);
+          result.detalles.push(`  ⚠ OC ${oc}: artículo ${m.SupplierCatNum} sustituido por artículo genérico (pendiente de revisión)`);
+        } else {
+          excluded.push(m);
+          logPipeline(db, oc, 3, "sap_catalog", "WARN",
+            `Artículo ${m.SupplierCatNum} no existe en AlternateCatNum — excluido`);
+          result.detalles.push(`  ⚠ OC ${oc}: artículo ${m.SupplierCatNum} no existe en catálogo SAP — excluido`);
+        }
       }
 
-      if (present.length === 0) {
-        const missingList = missing.map(l => l.SupplierCatNum).join(", ");
+      if (present.length === 0 && placeholderCodes.length === 0) {
+        const missingList = excluded.map(l => l.SupplierCatNum).join(", ");
         const msg = `Ningún artículo existe en catálogo SAP: ${missingList}`;
         db.prepare(`
           UPDATE pedidos_maestro SET estado='ERROR_CATALOG', error_msg=?, items_excluidos=?, fase_actual=3
           WHERE orden_compra=?
-        `).run(msg.slice(0, 1000), JSON.stringify(missing.map(l => l.SupplierCatNum)), oc);
+        `).run(msg.slice(0, 1000), JSON.stringify(excluded.map(l => l.SupplierCatNum)), oc);
         logPipeline(db, oc, 3, "sap_catalog", "ERROR", msg.slice(0, 1000));
         result.errores++;
         result.detalles.push(`✗ OC ${oc} → ERROR_CATALOG: ${msg}`);
         continue;
       }
 
-      // Algunos o todos los artículos existen → CATALOG_OK
-      const excludedNames = missing.map(l => l.SupplierCatNum);
+      // Algunos o todos los artículos existen (o quedaron cubiertos por el
+      // placeholder genérico) → CATALOG_OK
+      const excludedNames = excluded.map(l => l.SupplierCatNum);
       db.prepare(`
         UPDATE pedidos_maestro SET
           estado='CATALOG_OK', fase_actual=3, ts_sap_query=?,
-          items_excluidos=?, error_msg=NULL
+          items_excluidos=?, items_placeholder=?, error_msg=NULL
         WHERE orden_compra=?
       `).run(
         now,
         excludedNames.length ? JSON.stringify(excludedNames) : null,
+        placeholderCodes.length ? JSON.stringify(placeholderCodes) : null,
         oc
       );
 
-      const excMsg = missing.length ? ` — ${missing.length} artículo(s) excluido(s) del catálogo` : "";
+      const excMsg = excludedNames.length ? ` — ${excludedNames.length} artículo(s) excluido(s) del catálogo` : "";
+      const phMsg = placeholderCodes.length ? ` — ${placeholderCodes.length} artículo(s) sustituido(s) por genérico` : "";
       logPipeline(db, oc, 3, "sap_catalog", "OK",
-        `${present.length} artículo(s) en catálogo${excMsg}`);
+        `${present.length} artículo(s) en catálogo${excMsg}${phMsg}`);
       result.procesados++;
-      result.detalles.push(`✓ OC ${oc} → CATALOG_OK (${present.length}/${allCatNums.length} artículos)${excMsg}`);
+      result.detalles.push(`✓ OC ${oc} → CATALOG_OK (${present.length}/${allCatNums.length} artículos)${excMsg}${phMsg}`);
 
     } catch (e) {
       db.prepare(`UPDATE pedidos_maestro SET estado='ERROR_CATALOG', error_msg=? WHERE orden_compra=?`)

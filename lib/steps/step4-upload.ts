@@ -16,6 +16,8 @@ import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
 import { odataString } from "../odata";
+import { getConfig } from "../config";
+import { resolveUnmatchedLine } from "../catalog-fallback";
 
 export interface StepResult {
   procesados: number;
@@ -152,12 +154,18 @@ export async function run(): Promise<StepResult> {
       // Si la verificación falla, continuar con el flujo normal de upload
     }
 
-    // ── Leer artículos excluidos por step3 (catálogo) ───────────────────────
+    // ── Leer artículos excluidos y placeholder por step3 (catálogo) ─────────
     const catalogExcluded: string[] = JSON.parse(String(row.items_excluidos || "[]"));
+    const catalogPlaceholder: string[] = JSON.parse(String(row.items_placeholder || "[]"));
+    const config = getConfig();
 
     const lineas = aiData.DocumentLines
       .filter(l => !catalogExcluded.includes(l.SupplierCatNum))
-      .map(l => ({ ...l }));
+      .map(l => {
+        if (!catalogPlaceholder.includes(l.SupplierCatNum)) return { ...l };
+        // FLX-059: sustituye por el artículo genérico en vez de subir el código original
+        return resolveUnmatchedLine(config, l) ?? { ...l };
+      });
     const excluidos = aiData.DocumentLines
       .filter(l => catalogExcluded.includes(l.SupplierCatNum))
       .map(l => ({ ...l }));

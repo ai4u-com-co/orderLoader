@@ -55,6 +55,14 @@ export interface Config {
   diferenciasFolder: string;
   manualReviewFolderName: string;
   cardCodePrefix: string;
+
+  /**
+   * ItemCode de SAP de un artículo genérico "pendiente de revisar" que sustituye
+   * líneas del pedido sin match en el catálogo (FLX-059). Ausente por defecto:
+   * sin esta variable el pedido se comporta exactamente como hoy (línea excluida,
+   * ERROR_CATALOG si ninguna línea matchea). Solo configurada en .env.flexoimpresos.
+   */
+  genericPlaceholderItemCode?: string;
 }
 
 const REQUIRED_ENV_BASE: [string, string][] = [
@@ -158,6 +166,8 @@ export function getConfig(): Config {
     inboxFolderName:        process.env.INBOX_FOLDER_NAME          ?? "A B INGRESADO",
     diferenciasFolder:      process.env.DIFERENCIAS_FOLDER_NAME    ?? "A A REVISAR IA",
     manualReviewFolderName: process.env.MANUAL_REVIEW_FOLDER_NAME  ?? "A A SANDRA",
+
+    genericPlaceholderItemCode: process.env.GENERIC_PLACEHOLDER_ITEM_CODE || undefined,
   };
 
   return _config;
