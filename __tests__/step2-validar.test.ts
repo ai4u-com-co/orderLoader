@@ -221,4 +221,47 @@ describe("validarSapB1Json — SupplierCatNum repetido en el mismo pedido", () =
     );
     expect(errs).toEqual([]);
   });
+
+  // Caso real: OC 4500416657 de Hermeco (OFFCORSS), 12-ago-2026 — pedido multi-tienda:
+  // 58 de 62 líneas repetían SupplierCatNum + misma fecha de entrega general (una línea
+  // por tienda/centro de costo), y el gate bloqueaba el pedido completo como si fuera
+  // FLX-052. El XLSX adjunto del correo confirmó que el parseo era correcto: cada línea
+  // es un centro de costo real y distinto (columna "Centro" del pedido SAP del cliente).
+  it("permite el mismo código y fecha repetidos cuando el FreeText (tienda/centro) es distinto (multi-tienda legítimo)", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "10003", Quantity: 400, DeliveryDate: "20260901", FreeText: "T068 OFFCORSS FLORIDA MEDELLIN" },
+          { SupplierCatNum: "10003", Quantity: 700, DeliveryDate: "20260901", FreeText: "T017 OFFCORSS MOLINOS" },
+          { SupplierCatNum: "10003", Quantity: 600, DeliveryDate: "20260901", FreeText: "T118 OFFCORSS SAN NICOLAS 2" },
+        ],
+      }),
+      "Hermeco"
+    );
+    expect(errs).toEqual([]);
+  });
+
+  it("sigue rechazando el mismo código y fecha cuando el FreeText también coincide (o ambos vacíos) — preserva FLX-052", () => {
+    const errsSinFreeText = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "0019062", Quantity: 2700000, UnitPrice: 9.66, DeliveryDate: "20260805" },
+          { SupplierCatNum: "0019062", Quantity: 250, UnitPrice: 31399.4, DeliveryDate: "20260805" },
+        ],
+      }),
+      "NewStetic"
+    );
+    expect(errsSinFreeText.some(e => e.includes("código repetido"))).toBe(true);
+
+    const errsMismoFreeText = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "10003", Quantity: 400, DeliveryDate: "20260901", FreeText: "T068 OFFCORSS FLORIDA MEDELLIN" },
+          { SupplierCatNum: "10003", Quantity: 700, DeliveryDate: "20260901", FreeText: "T068 OFFCORSS FLORIDA MEDELLIN" },
+        ],
+      }),
+      "Hermeco"
+    );
+    expect(errsMismoFreeText.some(e => e.includes("código repetido"))).toBe(true);
+  });
 });
