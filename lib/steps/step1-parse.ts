@@ -82,7 +82,11 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
   // explícito porque esta extracción alimenta un upload automático a SAP en producción.
   const msg = await withAnthropicRetry(() => client.messages.create({
     model: PARSE_MODEL,
-    max_tokens: 8192,
+    // Pedidos multi-tienda (ej. Hermeco/OFFCORSS: 1 línea por tienda, mismo artículo,
+    // FreeText con el identificador de tienda por línea — ver OC 4500416657) pueden
+    // superar 60+ líneas; con FreeText el JSON de salida creció y 8192 truncaba la
+    // respuesta a mitad de un valor ("Unterminated string in JSON").
+    max_tokens: 16384,
     output_config: { effort: "high" },
     system: prompt,
     messages: [{ role: "user", content: visionContent }],
