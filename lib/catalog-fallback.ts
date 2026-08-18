@@ -12,19 +12,29 @@ import type { DocumentLine } from "./schemas";
 
 const FREE_TEXT_MAX = 100;
 
+/** Línea sustituida: se sube a SAP por ItemCode directo, no por SupplierCatNum. */
+export interface PlaceholderLine extends DocumentLine {
+  ItemCode: string;
+}
+
 /**
- * Si el tenant tiene configurado un artículo genérico, devuelve la línea sustituta
- * (mismo Quantity/DeliveryDate, SupplierCatNum del genérico, FreeText de aviso con
- * el código original para trazabilidad). Si no hay configuración, devuelve null —
- * el llamador debe tratar la línea como excluida, igual que hoy.
+ * Si el tenant tiene configurado un artículo genérico, devuelve la línea sustituta.
+ *
+ * IMPORTANTE: el ItemCode del genérico va en `ItemCode`, NUNCA en `SupplierCatNum`.
+ * SAP resuelve `SupplierCatNum` contra AlternateCatNum (catálogo del cliente) — como
+ * el ItemCode del genérico no está registrado ahí para ningún CardCode, mandarlo como
+ * SupplierCatNum produce "No matching records found" (ODBC -2028) y el pedido no se
+ * monta (bug real detectado en producción FLX-059, ago-2026: 3/3 pedidos fallaron).
+ * `SupplierCatNum` se conserva con el código ORIGINAL del pedido — no se usa para
+ * subir a SAP (ver step4-upload.ts), solo para trazabilidad/notificación/reconcile.
  */
-export function resolveUnmatchedLine(config: Config, line: DocumentLine): DocumentLine | null {
+export function resolveUnmatchedLine(config: Config, line: DocumentLine): PlaceholderLine | null {
   const itemCode = config.genericPlaceholderItemCode;
   if (!itemCode) return null;
 
   return {
     ...line,
-    SupplierCatNum: itemCode,
+    ItemCode: itemCode,
     FreeText: `Ojo revisar referencia: ${line.SupplierCatNum}`.slice(0, FREE_TEXT_MAX),
   };
 }

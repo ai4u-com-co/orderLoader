@@ -38,7 +38,12 @@ describe("resolveUnmatchedLine", () => {
     const resolved = resolveUnmatchedLine(config, line);
 
     expect(resolved).not.toBeNull();
-    expect(resolved!.SupplierCatNum).toBe("102296");
+    // El genérico va por ItemCode directo — NUNCA por SupplierCatNum, que SAP
+    // resuelve contra AlternateCatNum y produce "No matching records" (-2028)
+    // si el código no está registrado ahí (bug real detectado en producción).
+    expect(resolved!.ItemCode).toBe("102296");
+    // SupplierCatNum se conserva con el código ORIGINAL (trazabilidad/reconcile)
+    expect(resolved!.SupplierCatNum).toBe("SKU-NUEVO-123");
     // Cantidad real del pedido — el cliente pidió montar con la cantidad real
     expect(resolved!.Quantity).toBe(25);
     // Trazabilidad del código original + texto pedido por el cliente

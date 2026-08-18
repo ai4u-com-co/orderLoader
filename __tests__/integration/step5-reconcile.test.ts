@@ -58,13 +58,14 @@ describe("step5-reconcile — FLX-059 líneas placeholder", () => {
     const oc = "OC-REC-PH-001";
     const fixture = setupPedidoMontado(oc, ["SKU-EXISTS", "SKU-NEW"], ["SKU-NEW"]);
 
-    // SAP devuelve: la línea real + la línea placeholder con el código genérico 102296
+    // SAP devuelve: la línea real (SupplierCatNum) + la línea placeholder subida por
+    // ItemCode directo (FLX-059 fix: SIN SupplierCatNum — nunca se resolvió por ahí).
     mockSapGet.mockResolvedValue({
       DocEntry: 111, DocNum: "77", NumAtCard: fixture.NumAtCard, CardCode: fixture.CardCode,
       DocDate: fixture.DocDate, DocDueDate: fixture.DocDueDate, TaxDate: fixture.TaxDate,
       DocumentLines: [
         { SupplierCatNum: "SKU-EXISTS", Quantity: 10, UnitPrice: 1000, Price: 1000, ShipDate: "2026-01-01" },
-        { SupplierCatNum: "102296", Quantity: 10, UnitPrice: 0, Price: 0, ShipDate: "2026-01-01" },
+        { ItemCode: "102296", Quantity: 10, UnitPrice: 0, Price: 0, ShipDate: "2026-01-01" },
       ],
     });
 
@@ -78,7 +79,8 @@ describe("step5-reconcile — FLX-059 líneas placeholder", () => {
 
     expect(diferencias.some(d => d.campo === "Artículo faltante en SAP")).toBe(false);
     expect(diferencias.some(d => d.campo === "Pendiente de revisión (artículo genérico)" && d.pdf === "SKU-NEW")).toBe(true);
-    // La línea placeholder SÍ cuenta para el total esperado — no debe reportar "líneas totales"
+    // La línea placeholder queda excluida simétricamente de ambos lados (PDF y SAP)
+    // — no debe generar un falso "líneas totales"
     expect(diferencias.some(d => d.campo === "líneas totales")).toBe(false);
   });
 
@@ -90,7 +92,7 @@ describe("step5-reconcile — FLX-059 líneas placeholder", () => {
       DocEntry: 111, DocNum: "78", NumAtCard: fixture.NumAtCard, CardCode: fixture.CardCode,
       DocDate: fixture.DocDate, DocDueDate: fixture.DocDueDate, TaxDate: fixture.TaxDate,
       DocumentLines: [
-        { SupplierCatNum: "102296", Quantity: 10, UnitPrice: 0, Price: 0, ShipDate: "2026-01-01" },
+        { ItemCode: "102296", Quantity: 10, UnitPrice: 0, Price: 0, ShipDate: "2026-01-01" },
       ],
     });
 

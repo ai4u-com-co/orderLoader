@@ -170,9 +170,14 @@ describe("step4-upload", () => {
 
       const original = payload.DocumentLines.find(l => l.SupplierCatNum === "SKU-EXISTS");
       expect(original).toBeTruthy();
+      expect(original!.ItemCode).toBeUndefined(); // línea normal: nunca manda ItemCode
 
-      const placeholder = payload.DocumentLines.find(l => l.SupplierCatNum === "102296");
+      // La línea placeholder va por ItemCode directo — NUNCA por SupplierCatNum
+      // (SAP resuelve SupplierCatNum vía AlternateCatNum y rechaza con -2028
+      // "No matching records found" si el código no está registrado ahí).
+      const placeholder = payload.DocumentLines.find(l => l.ItemCode === "102296");
       expect(placeholder).toBeTruthy();
+      expect(placeholder!.SupplierCatNum).toBeUndefined();
       expect(placeholder!.Quantity).toBe(10); // cantidad real del fixture (buildSapOrderFixture)
       expect(String(placeholder!.FreeText)).toContain("Ojo revisar referencia");
       expect(String(placeholder!.FreeText)).toContain("SKU-NEW");
@@ -195,7 +200,8 @@ describe("step4-upload", () => {
       expect(result.procesados).toBe(1);
       const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
       expect(payload.DocumentLines).toHaveLength(2);
-      expect(payload.DocumentLines.every(l => l.SupplierCatNum === "102296")).toBe(true);
+      expect(payload.DocumentLines.every(l => l.ItemCode === "102296")).toBe(true);
+      expect(payload.DocumentLines.every(l => l.SupplierCatNum === undefined)).toBe(true);
     });
   });
 });

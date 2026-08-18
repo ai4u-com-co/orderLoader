@@ -192,13 +192,20 @@ export async function run(): Promise<StepResult> {
         DocDueDate: yyyymmddToIso(maxFechaLineas(lineas, aiData.DocDueDate)),
         TaxDate:    yyyymmddToIso(aiData.TaxDate),
         Comments:   (aiData.Comments ?? "").slice(0, 250),
-        DocumentLines: lineas.map(l => ({
-          SupplierCatNum: l.SupplierCatNum,
-          Quantity: l.Quantity,
-          // SAP B1 DocumentLine.FreeText max = 100 chars
-          FreeText: (l.FreeText ?? "").slice(0, 100),
-          ShipDate: yyyymmddToIso(l.DeliveryDate ?? aiData.DocDueDate),
-        })),
+        DocumentLines: lineas.map(l => {
+          // FLX-059: la línea placeholder va por ItemCode directo — SupplierCatNum
+          // se resuelve contra AlternateCatNum (catálogo del cliente) y el ItemCode
+          // del genérico no está registrado ahí, así que mandarlo como SupplierCatNum
+          // produce "No matching records found" (ODBC -2028) y el pedido no se monta.
+          const itemCode = (l as { ItemCode?: string }).ItemCode;
+          return {
+            ...(itemCode ? { ItemCode: itemCode } : { SupplierCatNum: l.SupplierCatNum }),
+            Quantity: l.Quantity,
+            // SAP B1 DocumentLine.FreeText max = 100 chars
+            FreeText: (l.FreeText ?? "").slice(0, 100),
+            ShipDate: yyyymmddToIso(l.DeliveryDate ?? aiData.DocDueDate),
+          };
+        }),
       };
 
       try {

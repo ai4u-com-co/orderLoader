@@ -203,13 +203,13 @@ export async function run(): Promise<StepResult> {
       }
 
       // ── Comparar cantidad de líneas (sin excluidos, sin líneas de texto SAP) ──
-      // Las líneas placeholder SÍ están montadas en SAP (con el código genérico),
-      // así que cuentan para el total esperado aunque no estén en pdfLinesActivas.
-      const totalPdfEsperado = pdfLinesActivas.length + itemsPlaceholderCodes.length;
-      if (totalPdfEsperado !== sapLines.length) {
+      // Las líneas placeholder se suben por ItemCode directo (ver step4-upload.ts),
+      // así que SAP las devuelve sin SupplierCatNum y el filtro de arriba ya las
+      // excluye de sapLines — simétrico con que pdfLinesActivas tampoco las incluye.
+      if (pdfLinesActivas.length !== sapLines.length) {
         diferencias.push({
           campo: "líneas totales",
-          pdf: totalPdfEsperado,
+          pdf: pdfLinesActivas.length,
           sap: sapLines.length,
         });
       }
