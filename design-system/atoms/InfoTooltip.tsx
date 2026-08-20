@@ -21,7 +21,8 @@ export function InfoTooltip({ text, side = "top", className }: InfoTooltipProps)
     >
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        onBlur={() => setOpen(false)}
         aria-label="Ayuda"
         className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-cadet-gray text-cadet-gray text-[9px] font-bold leading-none cursor-help hover:border-erie-black hover:text-erie-black transition-colors"
       >
