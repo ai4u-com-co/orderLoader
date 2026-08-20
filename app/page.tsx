@@ -7,6 +7,7 @@ import RunPipelineButton from "@/components/RunPipelineButton";
 import PedidoDetail from "@/components/PedidoDetail";
 import { Logo, Text, Button, Card } from "@/design-system";
 import { TERMINAL_STATES, ERROR_STATES } from "@/lib/constants";
+import { friendlyError } from "@/lib/help-content";
 
 // Estados finales: ni terminales ni de error necesitan auto-refresh.
 const ESTADOS_FINALES = new Set<string>([...TERMINAL_STATES, ...ERROR_STATES]);
@@ -23,6 +24,7 @@ export default function Home() {
   const [filtroEstado, setFiltroEstado]   = useState("todos");
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState<string | null>(null);
+  const [deleteError, setDeleteError]     = useState<string | null>(null);
   const [lastRefresh, setLastRefresh]     = useState<Date | null>(null);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
 
@@ -38,7 +40,7 @@ export default function Home() {
         setError(data.error);
       }
     } catch (e) {
-      setError(String(e));
+      setError(friendlyError(e));
     } finally {
       setLoading(false);
     }
@@ -47,14 +49,19 @@ export default function Home() {
   useEffect(() => { fetchPedidos(); }, [fetchPedidos]);
 
   const handleDelete = useCallback(async (ordenes: string[]) => {
-    const res  = await fetch("/api/pedidos", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ordenes_compra: ordenes }),
-    });
-    const data = await res.json();
-    if (data.ok) fetchPedidos();
-    else alert(`Error al eliminar: ${data.error}`);
+    setDeleteError(null);
+    try {
+      const res  = await fetch("/api/pedidos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ordenes_compra: ordenes }),
+      });
+      const data = await res.json();
+      if (data.ok) fetchPedidos();
+      else setDeleteError(data.error ?? "Error al eliminar los pedidos seleccionados.");
+    } catch (e) {
+      setDeleteError(friendlyError(e));
+    }
   }, [fetchPedidos]);
 
   useEffect(() => {
@@ -83,7 +90,7 @@ export default function Home() {
           <div className="w-px h-6 bg-erie-black/15" />
           <div>
             <Text variant="bodyBold" as="span" className="text-sm leading-none">
-              SAP B1 Order Pipeline
+              Automatización de Pedidos SAP B1
             </Text>
             <Text variant="xs" as="div" className="mt-0.5">
               Automatización Email → SAP B1
@@ -135,6 +142,12 @@ export default function Home() {
         {/* Table */}
         <Card variant="elevated" padding="lg">
           <Text variant="h3" as="h2" className="mb-5">Pedidos</Text>
+
+          {deleteError && (
+            <div className="rounded-[0.75rem] border border-hot-orange/30 bg-hot-orange/5 px-4 py-3 text-sm mb-4">
+              <span className="font-semibold">Error al eliminar:</span> {deleteError}
+            </div>
+          )}
 
           {loading ? (
             <div className="py-10 text-center text-cadet-gray text-sm">Cargando…</div>

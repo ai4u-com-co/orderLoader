@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import PipelineStatus from "./PipelineStatus";
-import { Button, cn } from "@/design-system";
+import PipelineStatus, { STATUS_MAP } from "./PipelineStatus";
+import { Button, ConfirmModal, cn } from "@/design-system";
 
 export interface Pedido {
   id: number;
@@ -100,6 +100,7 @@ function NotaCell({ msg, validacion }: { msg: string | null; validacion: string 
 export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onSelect, onDelete }: Props) {
   const [busqueda, setBusqueda]         = useState("");
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const filtered = (filtroEstado === "todos" ? pedidos : pedidos.filter(p => p.estado === filtroEstado))
     .filter(p => !busqueda || p.cliente_nombre.toLowerCase().includes(busqueda.toLowerCase()));
@@ -122,11 +123,11 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
     });
   }
 
-  function handleDelete() {
+  function handleDeleteConfirmed() {
     const lista = [...seleccionados];
-    if (!confirm(`¿Eliminar ${lista.length} pedido(s) de la base de datos? Esta acción no se puede deshacer.`)) return;
     onDelete(lista);
     setSeleccionados(new Set());
+    setConfirmDelete(false);
   }
 
   const stateCounts = pedidos.reduce((acc, p) => {
@@ -165,11 +166,22 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
         </div>
 
         {seleccionados.size > 0 && (
-          <Button variant="accent" size="sm" onClick={handleDelete}>
+          <Button variant="accent" size="sm" onClick={() => setConfirmDelete(true)}>
             Eliminar {seleccionados.size} seleccionado(s)
           </Button>
         )}
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Eliminar pedidos"
+          message={`¿Eliminar ${seleccionados.size} pedido(s) de la base de datos? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar"
+          variant="danger"
+          onConfirm={handleDeleteConfirmed}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
 
       {/* State filters */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -204,7 +216,7 @@ export default function PedidoTable({ pedidos, filtroEstado, onFiltroChange, onS
                 : "border border-erie-black/20 text-erie-black hover:border-erie-black"
             )}
           >
-            {e}
+            {STATUS_MAP[e]?.label ?? e}
             <span className={cn(
               "text-[10px] font-bold px-1.5 py-0.5 rounded-[9999px]",
               filtroEstado === e ? "bg-white/20 text-white" : "bg-erie-black/8 text-cadet-gray"

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Logo, Text, Button, Card, Badge } from "@/design-system";
+import { friendlyError } from "@/lib/help-content";
 
 interface Cliente {
   id: number;
@@ -55,7 +56,7 @@ export default function ClientesPage() {
         if (data.cardCodePrefix) setCardCodePrefix(data.cardCodePrefix);
         setError(null);
       } else setError(data.error ?? "Error desconocido");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(friendlyError(e)); }
     finally { setLoading(false); }
   }, []);
 

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { InfoTooltip } from "@/design-system";
+import { friendlyError, TRIGGERS_HELP } from "@/lib/help-content";
 
 interface LogEntry {
   id: number;
@@ -34,9 +36,9 @@ interface Summary {
 }
 
 const ESTADO_STYLES: Record<string, string> = {
-  OK:    "bg-green-50 text-green-700 border border-green-200",
-  ERROR: "bg-orange-50 text-orange-700 border border-orange-200",
-  WARN:  "bg-yellow-50 text-yellow-700 border border-yellow-200",
+  OK:    "bg-moderate-blue/10 text-moderate-blue border border-moderate-blue/30",
+  ERROR: "bg-hot-orange/10 text-hot-orange border border-hot-orange/30",
+  WARN:  "bg-cadet-gray/15 text-cadet-gray border border-cadet-gray/30",
 };
 
 function fmt(ts: string) {
@@ -70,7 +72,7 @@ export default function AuditPage() {
         setError(data.error);
       }
     } catch (e) {
-      setError(String(e));
+      setError(friendlyError(e));
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ export default function AuditPage() {
       <header className="sticky top-0 z-30 border-b border-erie-black/10 bg-mint-cream/80 backdrop-blur-sm">
         <div className="mx-auto max-w-[1400px] px-6 py-4 flex items-center gap-4">
           <Link href="/" className="text-cadet-gray hover:text-erie-black text-sm">← Dashboard</Link>
-          <h1 className="font-semibold text-base">Audit Trail — Pipeline</h1>
+          <h1 className="font-semibold text-base">Registro de Auditoría — Pipeline</h1>
         </div>
       </header>
 
@@ -105,7 +107,7 @@ export default function AuditPage() {
               { label: "Total entradas", value: summary.total,    color: "text-erie-black"    },
               { label: "OK",             value: summary.ok,        color: "text-moderate-blue" },
               { label: "Errores",        value: summary.errores,   color: "text-hot-orange"    },
-              { label: "Warnings",       value: summary.warnings,  color: "text-yellow-600"    },
+              { label: "Warnings",       value: summary.warnings,  color: "text-cadet-gray"    },
               { label: "Tokens (k)",     value: totalTokens,       color: "text-cadet-gray"    },
             ].map(({ label, value, color }) => (
               <div key={label} className="rounded-xl bg-white border border-erie-black/10 p-4 shadow-sm">
@@ -134,14 +136,17 @@ export default function AuditPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b border-erie-black/10">
           {(["log", "triggers"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === t
-                  ? "border-erie-black text-erie-black"
-                  : "border-transparent text-cadet-gray hover:text-erie-black"
-              }`}>
-              {t === "log" ? `Pipeline Log (${log.length})` : `Triggers (${triggers.length})`}
-            </button>
+            <span key={t} className="inline-flex items-center gap-1.5 -mb-px">
+              <button onClick={() => setTab(t)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  tab === t
+                    ? "border-erie-black text-erie-black"
+                    : "border-transparent text-cadet-gray hover:text-erie-black"
+                }`}>
+                {t === "log" ? `Pipeline Log (${log.length})` : `Triggers (${triggers.length})`}
+              </button>
+              {t === "triggers" && <InfoTooltip text={TRIGGERS_HELP} />}
+            </span>
           ))}
         </div>
 
@@ -209,8 +214,8 @@ export default function AuditPage() {
                     <td className="px-4 py-2.5">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                         row.resultado === "iniciado"
-                          ? "bg-green-50 text-green-700 border border-green-200"
-                          : "bg-gray-50 text-gray-600 border border-gray-200"
+                          ? "bg-moderate-blue/10 text-moderate-blue border border-moderate-blue/30"
+                          : "bg-cadet-gray/15 text-cadet-gray border border-cadet-gray/30"
                       }`}>{row.resultado}</span>
                     </td>
                   </tr>
