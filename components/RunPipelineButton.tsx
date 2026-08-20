@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Button, cn } from "@/design-system";
+import { Button, ConfirmModal, cn } from "@/design-system";
+import { friendlyError, RUN_PIPELINE_WARNING } from "@/lib/help-content";
 
 interface StepResult {
   step: number;
@@ -54,6 +55,7 @@ export default function RunPipelineButton({ onComplete }: Props) {
   const [error, setError]                 = useState<string | null>(null);
   const [done, setDone]                   = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+  const [confirmRun, setConfirmRun]       = useState(false);
 
   const streamingRef = useRef(false);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -103,7 +105,7 @@ export default function RunPipelineButton({ onComplete }: Props) {
     return () => { cancelled = true; stopPolling(); };
   }, [attachToRun, stopPolling]);
 
-  async function handleRun() {
+  async function executeRun() {
     streamingRef.current = true;
     setRunning(true);
     setResults([]);
@@ -156,12 +158,21 @@ export default function RunPipelineButton({ onComplete }: Props) {
         }
       }
     } catch (e) {
-      setError(String(e));
+      setError(friendlyError(e));
     } finally {
       streamingRef.current = false;
       // Si nos enganchamos (409), el polling controla `running`; no lo apaguemos aquí.
       if (!pollRef.current) setRunning(false);
     }
+  }
+
+  function handleRun() {
+    setConfirmRun(true);
+  }
+
+  function handleConfirmRun() {
+    setConfirmRun(false);
+    executeRun();
   }
 
   async function handleStop() {
@@ -207,6 +218,17 @@ export default function RunPipelineButton({ onComplete }: Props) {
           </Button>
         )}
       </div>
+
+      {confirmRun && (
+        <ConfirmModal
+          title="Correr el pipeline"
+          message={RUN_PIPELINE_WARNING}
+          confirmLabel="Correr pipeline"
+          variant="warning"
+          onConfirm={handleConfirmRun}
+          onCancel={() => setConfirmRun(false)}
+        />
+      )}
 
       {/* Error */}
       {error && (

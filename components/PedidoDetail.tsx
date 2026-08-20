@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import PipelineStatus from "./PipelineStatus";
 import { Button, cn } from "@/design-system";
+import { friendlyError } from "@/lib/help-content";
 import type { Pedido } from "./PedidoTable";
 
 interface Item {
@@ -120,7 +121,7 @@ export default function PedidoDetail({ pedido, onClose, onRetryDone }: Props) {
         }
       }
     } catch (e) {
-      setRetryError(String(e));
+      setRetryError(friendlyError(e));
     } finally {
       setRetrying(false);
     }
@@ -275,7 +276,7 @@ export default function PedidoDetail({ pedido, onClose, onRetryDone }: Props) {
                           l.estado_resultado === "ERROR" ? "text-hot-orange" : "text-erie-black/70"
                         )}>
                           <span className="font-mono text-cadet-gray whitespace-nowrap">{l.ts.slice(5, 16)}</span>
-                          <span className="font-mono text-cadet-gray">f{l.fase}</span>
+                          <span className="font-mono text-cadet-gray" title={l.fase_nombre}>f{l.fase}</span>
                           <span className="flex-1">{l.mensaje}</span>
                           {costoCop && (
                             <span

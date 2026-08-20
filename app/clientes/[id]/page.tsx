@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Logo, Text, Button, Card, Badge } from "@/design-system";
+import { Logo, Text, Button, Card, Badge, InfoTooltip } from "@/design-system";
+import { CLIENTE_CARPETA_HELP, CLIENTE_CARDCODE_HELP } from "@/lib/help-content";
 
 interface Cliente {
   id: number;
@@ -226,7 +227,10 @@ export default function ClienteDetailPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold text-cadet-gray uppercase tracking-wide">Carpeta (ID)</span>
+                  <span className="text-xs font-semibold text-cadet-gray uppercase tracking-wide inline-flex items-center gap-1">
+                    Carpeta (ID)
+                    <InfoTooltip text={CLIENTE_CARPETA_HELP} />
+                  </span>
                   <input
                     className="border border-erie-black/20 rounded-lg px-3 py-2 text-sm font-mono bg-white/50 cursor-not-allowed"
                     value={cliente?.carpeta ?? ""}
@@ -242,7 +246,10 @@ export default function ClienteDetailPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold text-cadet-gray uppercase tracking-wide">CardCode SAP</span>
+                  <span className="text-xs font-semibold text-cadet-gray uppercase tracking-wide inline-flex items-center gap-1">
+                    CardCode SAP
+                    <InfoTooltip text={CLIENTE_CARDCODE_HELP} />
+                  </span>
                   <input
                     className="border border-erie-black/20 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-moderate-blue/30"
                     value={cardCode}
