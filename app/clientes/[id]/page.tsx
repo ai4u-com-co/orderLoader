@@ -41,7 +41,9 @@ export default function ClienteDetailPage() {
   const [notes,          setNotes]          = useState("");
   const [attachedFile,   setAttachedFile]   = useState<File | null>(null);
   const [improving,      setImproving]      = useState(false);
+  const [generating,     setGenerating]     = useState(false);
   const [improvedPrompt, setImprovedPrompt] = useState<string | null>(null);
+  const [previewLabel,   setPreviewLabel]   = useState<"mejorado" | "generado">("mejorado");
   const [iterError,      setIterError]      = useState<string | null>(null);
 
   const fetchCliente = useCallback(async () => {
@@ -104,6 +106,7 @@ export default function ClienteDetailPage() {
       });
       const data = await res.json() as { ok: boolean; improved_prompt?: string; error?: string };
       if (data.ok && data.improved_prompt) {
+        setPreviewLabel("mejorado");
         setImprovedPrompt(data.improved_prompt);
       } else {
         setIterError(data.error ?? "Error al mejorar el prompt");
@@ -112,6 +115,32 @@ export default function ClienteDetailPage() {
       setIterError(String(e));
     } finally {
       setImproving(false);
+    }
+  }
+
+  async function handleGenerarDesdeCero() {
+    if (!attachedFile) return;
+    setGenerating(true);
+    setImprovedPrompt(null);
+    setIterError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", attachedFile);
+      const res = await fetch(`/api/clientes/${id}/generar-prompt`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json() as { ok: boolean; generated_prompt?: string; error?: string };
+      if (data.ok && data.generated_prompt) {
+        setPreviewLabel("generado");
+        setImprovedPrompt(data.generated_prompt);
+      } else {
+        setIterError(data.error ?? "Error al generar el prompt");
+      }
+    } catch (e) {
+      setIterError(String(e));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -322,16 +351,32 @@ export default function ClienteDetailPage() {
                 <span className="text-xs text-cadet-gray/60">Opcional — PDF o imagen de una OC real para dar contexto a la IA</span>
               </div>
 
-              <div className="flex justify-end mt-3">
+              <div className="flex justify-end gap-3 mt-3">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleGenerarDesdeCero}
+                  disabled={!attachedFile || !attachedFile.name.toLowerCase().endsWith(".pdf") || generating || improving}
+                  title={
+                    !attachedFile ? "Adjuntá un PDF para generar el prompt desde cero"
+                    : !attachedFile.name.toLowerCase().endsWith(".pdf") ? "Generar desde cero solo acepta PDF, no imágenes"
+                    : undefined
+                  }
+                >
+                  {generating ? "Generando…" : "Generar desde cero"}
+                </Button>
                 <Button
                   variant="primary"
                   size="md"
                   onClick={handleMejorar}
-                  disabled={notes.trim() === "" || improving}
+                  disabled={notes.trim() === "" || improving || generating}
                 >
                   {improving ? "Analizando…" : "Mejorar con IA"}
                 </Button>
               </div>
+              <Text variant="xs" className="text-cadet-gray/60 text-right mt-1">
+                &quot;Generar desde cero&quot; ignora el prompt actual y construye uno nuevo desde el PDF adjunto.
+              </Text>
 
               {iterError && (
                 <div className="rounded-xl border border-hot-orange/30 bg-hot-orange/5 px-4 py-3 text-sm text-hot-orange mt-3">
@@ -342,7 +387,9 @@ export default function ClienteDetailPage() {
               {improvedPrompt !== null && (
                 <div className="mt-4 border-t border-erie-black/10 pt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <Text variant="bodyBold" className="text-sm text-moderate-blue">Prompt mejorado — previsualización</Text>
+                    <Text variant="bodyBold" className="text-sm text-moderate-blue">
+                      {previewLabel === "generado" ? "Prompt generado desde cero — previsualización" : "Prompt mejorado — previsualización"}
+                    </Text>
                     <span className="text-xs text-cadet-gray font-mono">{improvedPrompt.length} caracteres</span>
                   </div>
                   <textarea
@@ -363,9 +410,9 @@ export default function ClienteDetailPage() {
                     <Button
                       variant="primary"
                       size="md"
-                      onClick={() => { setPrompt(improvedPrompt); setImprovedPrompt(null); setNotes(""); }}
+                      onClick={() => { setPrompt(improvedPrompt); setImprovedPrompt(null); setNotes(""); setAttachedFile(null); }}
                     >
-                      Aplicar mejora
+                      {previewLabel === "generado" ? "Aplicar prompt nuevo" : "Aplicar mejora"}
                     </Button>
                   </div>
                 </div>
