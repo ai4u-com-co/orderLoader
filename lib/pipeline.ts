@@ -73,6 +73,25 @@ function fmtMs(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+// step0-download.ts deja a propósito las notificaciones propias de OrderLoader
+// dentro del INBOX (ver "① Notificación propia de OrderLoader → dejar en INBOX")
+// y las re-lista en cada corrida con el prefijo "INBOX (notif OrderLoader): ...".
+// Esas líneas solo ECOAN el asunto histórico del correo — que puede traer "✗"/"⚠"
+// porque ese es el propio estado con el que se notificó en su momento (ej. "✗ Alta
+// tasa de errores — 11/21 órdenes fallaron" de hace semanas) — no una falla NUEVA
+// de esta corrida. Sin este corte, cada corrida hourly reclasifica como
+// log.error/log.warn TODO el historial de notificaciones que nunca se archiva,
+// generando una "alerta" que crece sin límite con el tiempo (ver incidente
+// Nightly Error Fixer 2026-08-19/20: cluster falso de "X/Y órdenes fallidas").
+const OWN_NOTIFICATION_ECHO_PREFIX = "INBOX (notif OrderLoader):";
+
+export function classifyDetailLine(line: string): "error" | "warn" | "info" {
+  if (line.startsWith(OWN_NOTIFICATION_ECHO_PREFIX)) return "info";
+  if (line.includes("✗") || /^Error/i.test(line))     return "error";
+  if (line.includes("⚠") || line.startsWith("↩"))      return "warn";
+  return "info";
+}
+
 function logStepResult(result: StepResult): void {
   const label  = `step:${result.step} ${result.name.padEnd(10)}`;
   const counts = `ok=${result.procesados}  err=${result.errores}  skip=${result.saltados}  (${fmtMs(result.duracionMs)})`;
@@ -86,9 +105,10 @@ function logStepResult(result: StepResult): void {
   for (const line of result.detalles) {
     const d = line.trim();
     if (!d) continue;
-    if (d.includes("✗") || /^Error/i.test(d))     log.error(`  ${d}`);
-    else if (d.includes("⚠") || d.startsWith("↩")) log.warn(`  ${d}`);
-    else                                             log.info(`  ${d}`);
+    const level = classifyDetailLine(d);
+    if (level === "error")      log.error(`  ${d}`);
+    else if (level === "warn")  log.warn(`  ${d}`);
+    else                         log.info(`  ${d}`);
   }
 }
 
