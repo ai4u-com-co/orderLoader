@@ -121,6 +121,31 @@ describe("step3-sap-query", () => {
     expect(JSON.parse(row.items_excluidos)).toContain("SKU-MISSING");
   });
 
+  it("matchea aunque SAP tenga el Substitute con un ancho de padding distinto de 13 (caso real Produempak OC 1591/1592, ago-2026)", async () => {
+    const oc = "OC-CAT-PAD";
+    // Extracción del PDF sin ceros a la izquierda (lo que devolvió Claude Vision
+    // la primera vez para OC 1591/1592) — en SAP, AlternateCatNum.Substitute para
+    // este CardCode está homologado con 7 dígitos: "0010268".
+    setupPedidoWithFile(oc, ["10268"]);
+
+    mockSapGet.mockImplementation((_: string, params: Record<string, string>) => {
+      if (params["$filter"]?.includes("Substitute eq '0010268'")) {
+        return Promise.resolve({ value: [{ ItemCode: "107642" }] });
+      }
+      return Promise.resolve({ value: [] });
+    });
+
+    const { run } = await import("@/lib/steps/step3-sap-query");
+    const result = await run();
+
+    expect(result.errores).toBe(0);
+    expect(result.procesados).toBe(1);
+
+    const row = _db.prepare("SELECT estado, items_excluidos FROM pedidos_maestro WHERE orden_compra = ?").get(oc) as { estado: string; items_excluidos: string | null };
+    expect(row.estado).toBe("CATALOG_OK");
+    expect(row.items_excluidos).toBeNull();
+  });
+
   it("marca ERROR_SAP (no ERROR_CATALOG ni parcial) cuando la consulta de un artículo falla", async () => {
     const oc = "OC-CAT-004";
     setupPedidoWithFile(oc, ["SKU-OK", "SKU-ERROR"]);
