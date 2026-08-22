@@ -78,8 +78,14 @@ porque tiene API key y script de publicación dedicados.
 npm run publish:changelog
 ```
 
-Variables (en `.env`): `CHANGELOG_URL`, `CHANGELOG_CLIENT_ID=orderloader`,
-`CHANGELOG_APP_ID=web`, `CHANGELOG_API_KEY=clk_...`.
+Variables (en `.env`): `CHANGELOG_URL`, `CHANGELOG_CLIENT_ID=ai4u`,
+`CHANGELOG_APP_ID=order-loader`, `CHANGELOG_API_KEY=clk_...`.
+
+> Nota: estos son los valores correctos post PR #32. Las env vars reales del proyecto en
+> Vercel (`CHANGELOG_CLIENT_ID`, `CHANGELOG_APP_ID` server-side, y
+> `NEXT_PUBLIC_CHANGELOG_CLIENT`, `NEXT_PUBLIC_CHANGELOG_APP` client-side) todavía hay que
+> migrarlas a mano en el dashboard de Vercel — eso es un PASO HUMANO, ningún PR de código
+> lo reemplaza.
 
 La UI lee el changelog vía `/api/changelog` (proxy server-side) y lo muestra en `/changelog`.
 Bump la versión en `package.json` y registra los cambios con `publish:changelog` antes de cada deploy.

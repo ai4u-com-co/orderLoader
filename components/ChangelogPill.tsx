@@ -12,8 +12,10 @@ import { ChangelogPill as DSChangelogPill } from "@ai4u/design-system/changelog"
  *   NEXT_PUBLIC_CHANGELOG_APP     (opcional)   override del appId
  *   NEXT_PUBLIC_CHANGELOG_URL     (opcional)   override de la URL del servicio
  */
-// OrderLoader se registra en el servicio como client "orderloader", appId "web".
-const APP_ID = "web";
+// OrderLoader se registra en el servicio como client "ai4u", appId "order-loader".
+// Este valor es solo el fallback de compilación (por si NEXT_PUBLIC_CHANGELOG_APP
+// no está seteada en Vercel); la fuente de verdad son las env vars del deploy.
+const APP_ID = "order-loader";
 
 export function ChangelogPill() {
   const client = process.env.NEXT_PUBLIC_CHANGELOG_CLIENT;
