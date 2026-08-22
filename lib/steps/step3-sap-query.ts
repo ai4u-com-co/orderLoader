@@ -38,19 +38,27 @@ export interface StepResult {
 }
 
 /** Consulta AlternateCatNum para un código. Si no encuentra, reintenta con
- *  variantes de ceros iniciales (padded a 13 dígitos y stripped) para tolerar
- *  extracción inconsistente del AI. Devuelve el ItemCode o null. */
+ *  variantes de ceros iniciales para tolerar extracción inconsistente del AI
+ *  Y distintos anchos de homologación por cliente: cada cliente registra su
+ *  Substitute en SAP con el ancho de campo de SU propio ERP (ej. Produempak
+ *  usa 7 dígitos "0010268", no necesariamente el ancho de código de barras
+ *  de 13 que ya cubríamos) — probamos todos los anchos entre el valor
+ *  stripped y 13 dígitos, no solo 13. Devuelve el ItemCode o null. */
 async function queryCatNum(
   sap: SapGateway,
   escapedCard: string,
   catNum: string,
 ): Promise<string | null> {
   const candidates = new Set<string>([catNum]);
-  // Variante sin ceros iniciales
-  candidates.add(catNum.replace(/^0+/, "") || catNum);
-  // Variante paddeada a 13 dígitos (solo si es numérico)
-  if (/^\d+$/.test(catNum) && catNum.length < 13) {
-    candidates.add(catNum.padStart(13, "0"));
+  if (/^\d+$/.test(catNum)) {
+    // Variante sin ceros iniciales
+    const stripped = catNum.replace(/^0+/, "") || "0";
+    candidates.add(stripped);
+    // Variantes paddeadas con ceros iniciales, de su ancho natural hasta 13
+    // (cubre cualquier convención de homologación del cliente, no solo 13)
+    for (let width = stripped.length; width <= 13; width++) {
+      candidates.add(stripped.padStart(width, "0"));
+    }
   }
 
   for (const candidate of candidates) {
