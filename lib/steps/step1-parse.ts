@@ -66,7 +66,7 @@ export function getTriageTipo(carpetaPath: string, pdfFile: string): TriageResul
 
 // ── AI Parser ─────────────────────────────────────────────────────────────────
 
-async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Order | null, string, { input?: number, output?: number }]> {
+export async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Order | null, string, { input?: number, output?: number }]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return [null, "ANTHROPIC_API_KEY no configurado en .env", {}];
 
@@ -86,7 +86,17 @@ async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[SapB1Ord
     // FreeText con el identificador de tienda por línea — ver OC 4500416657) pueden
     // superar 60+ líneas; con FreeText el JSON de salida creció y 8192 truncaba la
     // respuesta a mitad de un valor ("Unterminated string in JSON").
-    max_tokens: 16384,
+    //
+    // 16384 tampoco alcanza para pedidos grandes: verificado en vivo (VM producción,
+    // pipeline_log, 2026-08-25) que un pedido Éxito de 51 páginas / ~400 líneas
+    // (1 línea por "Dependencia de Entrega"/tienda, mismo artículo repetido) truncó
+    // el JSON en 3 intentos distintos con errores "Unterminated string in JSON",
+    // "Expected double-quoted property name in JSON" y "Unexpected end of JSON input"
+    // — los tres síntomas clásicos de una respuesta cortada por max_tokens, no de
+    // caracteres sin escapar. Claude Sonnet 5 soporta hasta 128K tokens de salida en
+    // la API síncrona (docs.claude.com, ago-2026); 65536 deja margen amplio (~10x el
+    // caso más grande observado) sin acercarse al techo real del modelo.
+    max_tokens: 65536,
     output_config: { effort: "high" },
     system: prompt,
     messages: [{ role: "user", content: visionContent }],
