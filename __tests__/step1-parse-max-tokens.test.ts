@@ -18,11 +18,25 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const createMock = vi.fn();
+const streamMock = vi.fn();
+
+const FAKE_FINAL_MESSAGE = {
+  content: [{ type: "text", text: JSON.stringify({
+    DocType: "dDocument_Items",
+    NumAtCard: "OC-1",
+    CardCode: "CN890900608",
+    DocDate: "20260101",
+    DocDueDate: "20260115",
+    TaxDate: "20260101",
+    Comments: "",
+    DocumentLines: [{ SupplierCatNum: "123", Quantity: 1, UnitPrice: 100, DeliveryDate: "20260115" }],
+  }) }],
+  usage: { input_tokens: 10, output_tokens: 10 },
+};
 
 vi.mock("@anthropic-ai/sdk", () => {
   class FakeAnthropic {
-    messages = { create: (...args: unknown[]) => createMock(...args) };
+    messages = { stream: (...args: unknown[]) => streamMock(...args) };
     static APIError = class extends Error {};
   }
   return { default: FakeAnthropic };
@@ -35,20 +49,10 @@ vi.mock("@/lib/pdf-vision", () => ({
 
 describe("parseWithAI — max_tokens", () => {
   beforeEach(() => {
-    createMock.mockReset();
+    streamMock.mockReset();
     process.env.ANTHROPIC_API_KEY = "test-key";
-    createMock.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify({
-        DocType: "dDocument_Items",
-        NumAtCard: "OC-1",
-        CardCode: "CN890900608",
-        DocDate: "20260101",
-        DocDueDate: "20260115",
-        TaxDate: "20260101",
-        Comments: "",
-        DocumentLines: [{ SupplierCatNum: "123", Quantity: 1, UnitPrice: 100, DeliveryDate: "20260115" }],
-      }) }],
-      usage: { input_tokens: 10, output_tokens: 10 },
+    streamMock.mockReturnValue({
+      finalMessage: vi.fn().mockResolvedValue(FAKE_FINAL_MESSAGE),
     });
   });
 
@@ -56,10 +60,17 @@ describe("parseWithAI — max_tokens", () => {
     const { parseWithAI } = await import("@/lib/steps/step1-parse");
     await parseWithAI(Buffer.from("fake-pdf"), "system prompt");
 
-    expect(createMock).toHaveBeenCalledTimes(1);
-    const callArgs = createMock.mock.calls[0][0] as { max_tokens: number };
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    const callArgs = streamMock.mock.calls[0][0] as { max_tokens: number };
     // El caso real (Éxito, 400 líneas) necesitó más que el límite viejo de 16384.
     // 32768 es el umbral de regresión; el fix actual pide 65536.
     expect(callArgs.max_tokens).toBeGreaterThanOrEqual(32768);
+  });
+
+  it("usa .stream() en vez de .create() — con max_tokens:65536 el SDK rechaza .create() no-streaming (ver ERROR_PARSE, OC 460164890027081, 28-ago)", async () => {
+    const { parseWithAI } = await import("@/lib/steps/step1-parse");
+    const [order] = await parseWithAI(Buffer.from("fake-pdf"), "system prompt");
+
+    expect(order).not.toBeNull();
   });
 });

@@ -80,7 +80,13 @@ export async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[S
   // Sonnet 5 rechaza temperature no-default con 400 (a diferencia de 4.6, que sí la
   // aceptaba) — se omite. output_config.effort:"high" es el default del modelo, se deja
   // explícito porque esta extracción alimenta un upload automático a SAP en producción.
-  const msg = await withAnthropicRetry(() => client.messages.create({
+  //
+  // .stream().finalMessage() en vez de .create(): con max_tokens:65536 el SDK estima
+  // (calculateNonstreamingTime) que una respuesta no-streaming podría tardar más de 10
+  // minutos y RECHAZA la llamada de entrada con "Streaming is required..." — ocurre para
+  // cualquier PDF, sin tocar la red (ver ERROR_PARSE en prod, OC 460164890027081, 28-ago).
+  // finalMessage() devuelve el mismo shape de Message que .create(), sin cambios aguas abajo.
+  const msg = await withAnthropicRetry(() => client.messages.stream({
     model: PARSE_MODEL,
     // Pedidos multi-tienda (ej. Hermeco/OFFCORSS: 1 línea por tienda, mismo artículo,
     // FreeText con el identificador de tienda por línea — ver OC 4500416657) pueden
@@ -100,7 +106,7 @@ export async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[S
     output_config: { effort: "high" },
     system: prompt,
     messages: [{ role: "user", content: visionContent }],
-  }));
+  }).finalMessage());
 
   const text = extractResponseText(msg.content);
   const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
