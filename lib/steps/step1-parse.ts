@@ -23,6 +23,21 @@ import { estimateCostUsd } from "../pricing";
 
 const PARSE_MODEL = "claude-sonnet-5";
 
+// Reintentos INMEDIATOS (misma invocación de parseWithAI) exclusivos para el caso donde
+// el ÚNICO campo que falla la validación Zod es DocType — un valor fijo que el prompt le
+// pide al modelo devolver siempre igual ("dDocument_Items"), sin relación con el contenido
+// del PDF (ver lib/prompt-generation.ts). No es un campo que dependa de lo que el modelo lea:
+// es una alucinación puntual del modelo de visión, confirmada contra pipeline_log real de
+// producción (VM Tamaprint, ago-sep 2026): en 3 de 4 casos reales, el mismo PDF con el mismo
+// prompt devolvió el valor correcto en el reintento siguiente del pipeline (hasta 1h después,
+// vía el mecanismo de reintentos entre corridas de step1). El 4/4 caso restante (OC 15192,
+// 2026-09-07) agotó los 3 reintentos ENTRE corridas — separados por hasta 1h cada uno — y
+// quedó en ERROR_PARSE pese a que el pedido era 100% válido en todos los demás campos.
+// Este retry interno no afloja la validación (DocType sigue exigiendo el literal exacto):
+// solo le da al modelo 2 oportunidades adicionales, en la misma corrida, antes de gastar
+// un ciclo completo de reintento entre corridas (que puede tardar hasta 1h en producción).
+const MAX_DOCTYPE_RETRIES = 2;
+
 export interface StepResult {
   procesados: number;
   errores: number;
@@ -77,92 +92,116 @@ export async function parseWithAI(pdfBuffer: Buffer, prompt: string): Promise<[S
   const { pages } = await pdfToImages(pdfBuffer);
   const visionContent = buildVisionContent(pages);
 
-  // Sonnet 5 rechaza temperature no-default con 400 (a diferencia de 4.6, que sí la
-  // aceptaba) — se omite. output_config.effort:"high" es el default del modelo, se deja
-  // explícito porque esta extracción alimenta un upload automático a SAP en producción.
-  //
-  // .stream().finalMessage() en vez de .create(): con max_tokens:65536 el SDK estima
-  // (calculateNonstreamingTime) que una respuesta no-streaming podría tardar más de 10
-  // minutos y RECHAZA la llamada de entrada con "Streaming is required..." — ocurre para
-  // cualquier PDF, sin tocar la red (ver ERROR_PARSE en prod, OC 460164890027081, 28-ago).
-  // finalMessage() devuelve el mismo shape de Message que .create(), sin cambios aguas abajo.
-  const msg = await withAnthropicRetry(() => client.messages.stream({
-    model: PARSE_MODEL,
-    // Pedidos multi-tienda (ej. Hermeco/OFFCORSS: 1 línea por tienda, mismo artículo,
-    // FreeText con el identificador de tienda por línea — ver OC 4500416657) pueden
-    // superar 60+ líneas; con FreeText el JSON de salida creció y 8192 truncaba la
-    // respuesta a mitad de un valor ("Unterminated string in JSON").
+  let lastUsage: { input?: number, output?: number } = {};
+
+  for (let attempt = 0; attempt <= MAX_DOCTYPE_RETRIES; attempt++) {
+    // Sonnet 5 rechaza temperature no-default con 400 (a diferencia de 4.6, que sí la
+    // aceptaba) — se omite. output_config.effort:"high" es el default del modelo, se deja
+    // explícito porque esta extracción alimenta un upload automático a SAP en producción.
     //
-    // 16384 tampoco alcanza para pedidos grandes: verificado en vivo (VM producción,
-    // pipeline_log, 2026-08-25) que un pedido Éxito de 51 páginas / ~400 líneas
-    // (1 línea por "Dependencia de Entrega"/tienda, mismo artículo repetido) truncó
-    // el JSON en 3 intentos distintos con errores "Unterminated string in JSON",
-    // "Expected double-quoted property name in JSON" y "Unexpected end of JSON input"
-    // — los tres síntomas clásicos de una respuesta cortada por max_tokens, no de
-    // caracteres sin escapar. Claude Sonnet 5 soporta hasta 128K tokens de salida en
-    // la API síncrona (docs.claude.com, ago-2026); 65536 deja margen amplio (~10x el
-    // caso más grande observado) sin acercarse al techo real del modelo.
-    max_tokens: 65536,
-    output_config: { effort: "high" },
-    system: prompt,
-    messages: [{ role: "user", content: visionContent }],
-  }).finalMessage());
+    // .stream().finalMessage() en vez de .create(): con max_tokens:65536 el SDK estima
+    // (calculateNonstreamingTime) que una respuesta no-streaming podría tardar más de 10
+    // minutos y RECHAZA la llamada de entrada con "Streaming is required..." — ocurre para
+    // cualquier PDF, sin tocar la red (ver ERROR_PARSE en prod, OC 460164890027081, 28-ago).
+    // finalMessage() devuelve el mismo shape de Message que .create(), sin cambios aguas abajo.
+    const msg = await withAnthropicRetry(() => client.messages.stream({
+      model: PARSE_MODEL,
+      // Pedidos multi-tienda (ej. Hermeco/OFFCORSS: 1 línea por tienda, mismo artículo,
+      // FreeText con el identificador de tienda por línea — ver OC 4500416657) pueden
+      // superar 60+ líneas; con FreeText el JSON de salida creció y 8192 truncaba la
+      // respuesta a mitad de un valor ("Unterminated string in JSON").
+      //
+      // 16384 tampoco alcanza para pedidos grandes: verificado en vivo (VM producción,
+      // pipeline_log, 2026-08-25) que un pedido Éxito de 51 páginas / ~400 líneas
+      // (1 línea por "Dependencia de Entrega"/tienda, mismo artículo repetido) truncó
+      // el JSON en 3 intentos distintos con errores "Unterminated string in JSON",
+      // "Expected double-quoted property name in JSON" y "Unexpected end of JSON input"
+      // — los tres síntomas clásicos de una respuesta cortada por max_tokens, no de
+      // caracteres sin escapar. Claude Sonnet 5 soporta hasta 128K tokens de salida en
+      // la API síncrona (docs.claude.com, ago-2026); 65536 deja margen amplio (~10x el
+      // caso más grande observado) sin acercarse al techo real del modelo.
+      max_tokens: 65536,
+      output_config: { effort: "high" },
+      system: prompt,
+      messages: [{ role: "user", content: visionContent }],
+    }).finalMessage());
 
-  const text = extractResponseText(msg.content);
-  const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
-  if (!text) return [null, "Respuesta vacía del modelo", usage];
+    const text = extractResponseText(msg.content);
+    const usage = { input: msg.usage?.input_tokens, output: msg.usage?.output_tokens };
+    lastUsage = usage;
+    if (!text) return [null, "Respuesta vacía del modelo", usage];
 
-  // Detectar cuando Claude indica que el adjunto no es una OC
-  const NOT_PO_PHRASES = [
-    "not a purchase order", "is not a purchase order", "not an order",
-    "no es una orden", "no es una OC", "cannot generate the requested json",
-    "is not valid", "not a valid", "this is a", "this image shows",
-  ];
-  if (NOT_PO_PHRASES.some(p => text.toLowerCase().includes(p.toLowerCase()))) {
-    return [null, `Adjunto no es una OC — requiere revisión manual: ${text.slice(0, 200)}`, usage];
-  }
+    // Detectar cuando Claude indica que el adjunto no es una OC
+    const NOT_PO_PHRASES = [
+      "not a purchase order", "is not a purchase order", "not an order",
+      "no es una orden", "no es una OC", "cannot generate the requested json",
+      "is not valid", "not a valid", "this is a", "this image shows",
+    ];
+    if (NOT_PO_PHRASES.some(p => text.toLowerCase().includes(p.toLowerCase()))) {
+      return [null, `Adjunto no es una OC — requiere revisión manual: ${text.slice(0, 200)}`, usage];
+    }
 
-  // Limpiar fences de markdown y extraer bloque JSON aunque Claude haya añadido texto antes
-  const stripped = text.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
-  const clean = stripped.startsWith("{") ? stripped : (stripped.match(/\{[\s\S]*\}/)?.[0] ?? stripped);
+    // Limpiar fences de markdown y extraer bloque JSON aunque Claude haya añadido texto antes
+    const stripped = text.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+    const clean = stripped.startsWith("{") ? stripped : (stripped.match(/\{[\s\S]*\}/)?.[0] ?? stripped);
 
-  try {
-    const rawOrder = JSON.parse(clean);
+    try {
+      const rawOrder = JSON.parse(clean);
 
-    // Fechas por defecto si el AI no pudo leerlas del PDF
-    const isValidYYYYMMDD = (v: unknown) => typeof v === "string" && /^\d{8}$/.test(v);
-    const thisYear = new Date().getFullYear();
-    // TaxDate debe ser del año actual (período abierto en SAP); si el AI leyó una fecha antigua, usar hoy
-    const isRecentYear = (v: unknown) => isValidYYYYMMDD(v) && parseInt(String(v).slice(0, 4)) >= thisYear;
-    if (!isRecentYear(rawOrder.TaxDate))    rawOrder.TaxDate    = todayYYYYMMDD();
-    if (!isValidYYYYMMDD(rawOrder.DocDueDate)) rawOrder.DocDueDate = todayYYYYMMDD(15);
+      // Fechas por defecto si el AI no pudo leerlas del PDF
+      const isValidYYYYMMDD = (v: unknown) => typeof v === "string" && /^\d{8}$/.test(v);
+      const thisYear = new Date().getFullYear();
+      // TaxDate debe ser del año actual (período abierto en SAP); si el AI leyó una fecha antigua, usar hoy
+      const isRecentYear = (v: unknown) => isValidYYYYMMDD(v) && parseInt(String(v).slice(0, 4)) >= thisYear;
+      if (!isRecentYear(rawOrder.TaxDate))    rawOrder.TaxDate    = todayYYYYMMDD();
+      if (!isValidYYYYMMDD(rawOrder.DocDueDate)) rawOrder.DocDueDate = todayYYYYMMDD(15);
 
-    // Normalizar DeliveryDate en líneas: el AI a veces devuelve YYYY-MM-DD u otros formatos
-    if (Array.isArray(rawOrder.DocumentLines)) {
-      for (const line of rawOrder.DocumentLines) {
-        if (!isValidYYYYMMDD(line.DeliveryDate)) {
-          // Intentar convertir YYYY-MM-DD → YYYYMMDD
-          if (typeof line.DeliveryDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(line.DeliveryDate)) {
-            line.DeliveryDate = line.DeliveryDate.replace(/-/g, "");
-          } else {
-            line.DeliveryDate = rawOrder.DocDueDate;
+      // Normalizar DeliveryDate en líneas: el AI a veces devuelve YYYY-MM-DD u otros formatos
+      if (Array.isArray(rawOrder.DocumentLines)) {
+        for (const line of rawOrder.DocumentLines) {
+          if (!isValidYYYYMMDD(line.DeliveryDate)) {
+            // Intentar convertir YYYY-MM-DD → YYYYMMDD
+            if (typeof line.DeliveryDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(line.DeliveryDate)) {
+              line.DeliveryDate = line.DeliveryDate.replace(/-/g, "");
+            } else {
+              line.DeliveryDate = rawOrder.DocDueDate;
+            }
           }
         }
       }
+
+      // Validación estricta con Zod
+      const result = SapB1OrderSchema.safeParse(rawOrder);
+
+      if (!result.success) {
+        // DocType es un valor FIJO (el prompt le pide al modelo devolver siempre
+        // "dDocument_Items", sin relación con el contenido del PDF — ver
+        // prompt-generation.ts). Si es el ÚNICO campo que falló, es una alucinación
+        // puntual del modelo de visión, no un problema real del documento ni del
+        // schema: reintentar la MISMA llamada antes de rendirse (ver MAX_DOCTYPE_RETRIES).
+        const soloFalloDocType =
+          result.error.issues.length === 1 && result.error.issues[0].path.join(".") === "DocType";
+        if (soloFalloDocType && attempt < MAX_DOCTYPE_RETRIES) {
+          console.warn(
+            `[parse] DocType inválido en intento ${attempt + 1}/${MAX_DOCTYPE_RETRIES + 1} ` +
+            `(campo fijo, no depende del PDF) — reintentando la misma llamada...`
+          );
+          continue;
+        }
+
+        const issues = result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join(" | ");
+        return [null, `Error de validación AI: ${issues}`, usage];
+      }
+
+      return [result.data, "OK", usage];
+    } catch (e) {
+      return [null, `JSON parse error: ${String(e).slice(0, 80)} | Respuesta: ${clean.slice(0, 200)}`, usage];
     }
-
-    // Validación estricta con Zod
-    const result = SapB1OrderSchema.safeParse(rawOrder);
-
-    if (!result.success) {
-      const issues = result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join(" | ");
-      return [null, `Error de validación AI: ${issues}`, usage];
-    }
-
-    return [result.data, "OK", usage];
-  } catch (e) {
-    return [null, `JSON parse error: ${String(e).slice(0, 80)} | Respuesta: ${clean.slice(0, 200)}`, usage];
   }
+
+  // Inalcanzable en la práctica: el loop siempre retorna en su última iteración
+  // (attempt === MAX_DOCTYPE_RETRIES nunca cumple `attempt < MAX_DOCTYPE_RETRIES`).
+  return [null, "Error de validación AI: reintentos de DocType agotados", lastUsage];
 }
 
 // ── DB helpers ───────────────────────────────────────────────────────────────
