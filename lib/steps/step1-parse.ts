@@ -258,6 +258,17 @@ function insertSapOrder(
 
 
 
+// Clave única de un PDF en error: carpeta del correo + nombre del PDF (sin extensión).
+// Debe ser la MISMA fórmula usada para insertar en pedidos_maestro (registerParseErrorInDb)
+// y para el contenido de `.done` cuando el PDF queda en error (ver run()) — si difieren, el
+// check "¿sigue esta OC en la BD?" de más abajo nunca encuentra el registro real y dispara
+// un reproceso fantasma en cada corrida (bug real, confirmado en producción: 705 corridas
+// repitiendo "reprocesando (registro DB eliminado)" desde 2026-08-18 sin nunca reprocesar de
+// verdad, para docenas de PDFs ya en ERROR_PARSE).
+function pseudoOcDePdfEnError(carpetaNombre: string, pdfFile: string): string {
+  return `${carpetaNombre.slice(0, 40)}_${pdfFile.replace(/\.[^.]+$/, "").slice(0, 15)}`;
+}
+
 /**
  * Cuando un PDF alcanza el límite de retries, crea un registro de error en la DB
  * para que step6 lo notifique y step7 archive el correo. Sin esto, el correo queda
@@ -272,8 +283,7 @@ function registerParseErrorInDb(
   errorMsg: string,
 ): void {
   try {
-    // Clave única: carpeta del correo + nombre del PDF (sin extensión)
-    const pseudoOc = `${carpetaNombre.slice(0, 40)}_${pdfFile.replace(/\.[^.]+$/, "").slice(0, 15)}`;
+    const pseudoOc = pseudoOcDePdfEnError(carpetaNombre, pdfFile);
 
     // Sub-folder de error: step7 necesita correo_metadata.json para archivar el correo
     const errorFolder = path.join(carpetaPath, pseudoOc);
@@ -346,8 +356,10 @@ export async function run(): Promise<StepResult> {
 
       // Procesar TODOS los PDFs del correo — cada uno puede ser una OC distinta
       for (const pdfFile of pdfs) {
-        const skipMarker = path.join(carpetaPath, `${pdfFile}.skip`);
-        const doneMarker = path.join(carpetaPath, `${pdfFile}.done`);
+        const skipMarker  = path.join(carpetaPath, `${pdfFile}.skip`);
+        const doneMarker  = path.join(carpetaPath, `${pdfFile}.done`);
+        const retriesPath = path.join(carpetaPath, `${pdfFile}.retries`);
+        const errorPath   = path.join(carpetaPath, `${pdfFile}.error`);
 
         // Idempotencia por PDF: ya fue procesado o descartado explícitamente
         if (fs.existsSync(skipMarker)) {
@@ -364,6 +376,13 @@ export async function run(): Promise<StepResult> {
             : true;
           if (!existeEnDb) {
             fs.rmSync(doneMarker, { force: true });
+            // El registro (éxito o error) ya no está en la BD: para que sea un reproceso
+            // de verdad hay que limpiar también el estado de error/retries — si no, la
+            // siguiente línea (chequeo de errorPath) vuelve a saltar el PDF sin reprocesarlo,
+            // dejando el pipeline en un loop silencioso que repite este mensaje cada corrida
+            // sin avanzar nunca (bug real confirmado en producción, ver pseudoOcDePdfEnError).
+            fs.rmSync(errorPath, { force: true });
+            fs.rmSync(retriesPath, { force: true });
             result.detalles.push(`↩ ${carpeta}/${carpetaNombre}/${pdfFile}: reprocesando (registro DB eliminado)`);
           } else {
             result.saltados++;
@@ -371,12 +390,12 @@ export async function run(): Promise<StepResult> {
           }
         }
 
-        const retriesPath = path.join(carpetaPath, `${pdfFile}.retries`);
-        const errorPath   = path.join(carpetaPath, `${pdfFile}.error`);
-
         if (fs.existsSync(errorPath)) {
           result.saltados++;
-          fs.writeFileSync(doneMarker, "error");  // siguiente corrida usa el check silencioso de línea 260
+          // Guardar la MISMA clave que registerParseErrorInDb insertó en pedidos_maestro,
+          // no un sentinel literal — si no coinciden, el chequeo de arriba nunca encuentra
+          // el registro real y dispara un reproceso fantasma en cada corrida futura.
+          fs.writeFileSync(doneMarker, pseudoOcDePdfEnError(carpetaNombre, pdfFile));
           continue;
         }
 
