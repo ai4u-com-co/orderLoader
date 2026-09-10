@@ -217,6 +217,30 @@ function registerManualReviewInDb(
   return pseudoOc;
 }
 
+/**
+ * True si este Message-ID ya quedó con un movimiento IMAP pendiente en una corrida anterior
+ * (el correo se descargó y sus archivos se escribieron a disco, pero el messageMove a la
+ * carpeta de staging/revisión manual falló). El loop de descarga de step0 relee "1:*" desde
+ * INBOX en cada llamada — sin este check, un correo cuyo move falló sigue visible ahí y la
+ * siguiente llamada a step0 lo procesa OTRA VEZ desde cero (nueva carpeta, nuevo parseo AI,
+ * nuevo INSERT OR REPLACE en pedidos_maestro). Si la primera pasada ya llegó a subirse a SAP,
+ * la reingesta cae en ERROR_DUPLICADO contra su propia carga anterior (ver PATRÓN
+ * "OC ya existe en SAP — posible reingesta repetida", confirmado en producción tamaprint:
+ * 17 casos en 24h con DocEntry real de SAP, uno por correo cuyo move IMAP falló y se reintentó
+ * en la iteración inmediatamente siguiente del mismo run).
+ *
+ * El recovery real (reintentar SOLO el move, sin reprocesar el correo) ya existe en
+ * recoverPendingMoves() y corre al inicio de cada runPipeline(); este check evita que el loop
+ * de descarga lo pise reprocesando el correo completo antes de que el recovery tenga
+ * oportunidad de correr.
+ */
+export function tieneMovePendiente(db: ReturnType<typeof getDb>, messageId: string): boolean {
+  if (!messageId) return false;
+  return !!db.prepare(
+    "SELECT 1 FROM imap_pending_moves WHERE message_id = ? AND estado = 'PENDIENTE'"
+  ).get(messageId);
+}
+
 async function moveToManualReview(imapClient: ImapFlow, uid: number, manualReviewFolder: string): Promise<void> {
   try {
     await imapClient.messageMove(String(uid), manualReviewFolder, { uid: true });
@@ -770,6 +794,20 @@ export async function run(): Promise<StepResult> {
               } else {
                 otherAttachments.push(info);
               }
+            }
+          }
+
+          // ── 2b. Move IMAP pendiente de una pasada anterior → no reprocesar ──────
+          // Este mismo correo ya se descargó antes y quedó esperando que recoverPendingMoves()
+          // reintente el move; procesarlo de nuevo aquí duplicaría el pedido (ver
+          // tieneMovePendiente).
+          if (messageId) {
+            let yaPendiente = false;
+            try { yaPendiente = tieneMovePendiente(getDb(), messageId); } catch { /* DB no disponible */ }
+            if (yaPendiente) {
+              result.saltados++;
+              result.detalles.push(`↷ Move IMAP pendiente de recovery, no se reprocesa: "${subject}" de ${sender}`);
+              continue;
             }
           }
 
