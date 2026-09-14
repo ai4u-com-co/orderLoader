@@ -212,6 +212,8 @@ export function migrate(): void {
     { name: "005_add_notificacion_enviada", sql: `ALTER TABLE pedidos_maestro ADD COLUMN notificacion_enviada INTEGER DEFAULT 0` },
     { name: "006_add_costo_ia_usd",         sql: `ALTER TABLE pedidos_maestro ADD COLUMN costo_ia_usd REAL` },
     { name: "007_add_items_placeholder",    sql: `ALTER TABLE pedidos_maestro ADD COLUMN items_placeholder TEXT` },
+    // FLX-103: meses sin fabricar para marcar "VALIDAR ARTE" (NULL = desactivado)
+    { name: "008_add_validar_arte_meses",   sql: `ALTER TABLE clientes_aprobados ADD COLUMN validar_arte_meses INTEGER` },
   ];
 
   for (const m of migrations) {
@@ -359,6 +361,22 @@ export interface ClienteAprobado {
   activo: number;
   ts_creado: string;
   ts_modificado: string;
+  /** FLX-103: meses sin fabricar para marcar "VALIDAR ARTE" en las líneas; null = desactivado */
+  validar_arte_meses?: number | null;
+}
+
+/**
+ * FLX-103: config "VALIDAR ARTE" del cliente dueño del CardCode del pedido.
+ * null si ningún cliente con ese CardCode la tiene activa (> 0).
+ */
+export function getValidarArteMesesByCardCode(db: Database.Database, cardCode: string): number | null {
+  if (!cardCode) return null;
+  const row = db.prepare(`
+    SELECT validar_arte_meses AS meses FROM clientes_aprobados
+    WHERE card_code = ? AND validar_arte_meses > 0
+    ORDER BY activo DESC LIMIT 1
+  `).get(cardCode) as { meses: number } | undefined;
+  return row?.meses ?? null;
 }
 
 export function getClientes(db: Database.Database): ClienteAprobado[] {
@@ -400,6 +418,8 @@ export function upsertCliente(db: Database.Database, data: {
 export function updateCliente(db: Database.Database, id: number, data: {
   nombre?: string; nit_principal?: string; nits_json?: string;
   keywords_json?: string; card_code?: string; prompt?: string; activo?: number;
+  /** null = desactivar (se escribe NULL); undefined = no tocar */
+  validar_arte_meses?: number | null;
 }): void {
   const fields = Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined);
   if (fields.length === 0) return;

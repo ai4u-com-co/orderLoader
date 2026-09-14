@@ -18,7 +18,10 @@ interface Cliente {
   activo: number;
   ts_creado: string;
   ts_modificado: string;
+  validar_arte_meses?: number | null;
 }
+
+const mesesToInput = (v: number | null | undefined) => (v == null ? "" : String(v));
 
 export default function ClienteDetailPage() {
   const { id }   = useParams<{ id: string }>();
@@ -37,6 +40,7 @@ export default function ClienteDetailPage() {
   const [cardCode, setCardCode] = useState("");
   const [prompt,   setPrompt]   = useState("");
   const [activo,   setActivo]   = useState(1);
+  const [validarArteMeses, setValidarArteMeses] = useState("");
 
   // AI iteration state (ephemeral, not saved to DB)
   const [notes,          setNotes]          = useState("");
@@ -61,6 +65,7 @@ export default function ClienteDetailPage() {
       setCardCode(c.card_code);
       setPrompt(c.prompt);
       setActivo(c.activo);
+      setValidarArteMeses(mesesToInput(c.validar_arte_meses));
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }, [id]);
@@ -83,6 +88,7 @@ export default function ClienteDetailPage() {
           card_code: cardCode,
           prompt,
           activo,
+          validar_arte_meses: validarArteMeses.trim() === "" ? null : Number(validarArteMeses),
         }),
       });
       const data = await res.json() as { ok: boolean; error?: string };
@@ -158,7 +164,8 @@ export default function ClienteDetailPage() {
     keywords !== cliente.keywords.join(", ") ||
     cardCode !== cliente.card_code ||
     prompt !== cliente.prompt ||
-    activo !== cliente.activo
+    activo !== cliente.activo ||
+    validarArteMeses !== mesesToInput(cliente.validar_arte_meses)
   ) : false;
 
   return (
@@ -274,6 +281,22 @@ export default function ClienteDetailPage() {
                     placeholder="gco, comodin, americanino, gco.com.co"
                   />
                   <span className="text-xs text-cadet-gray">Palabras clave para detectar este cliente en PDFs cuando no se encuentra el NIT.</span>
+                </label>
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-xs font-semibold text-cadet-gray uppercase tracking-wide">Validar arte (meses sin fabricar)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={24}
+                    className="w-full sm:w-40 border border-erie-black/20 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-moderate-blue/30"
+                    value={validarArteMeses}
+                    onChange={e => setValidarArteMeses(e.target.value)}
+                    placeholder="Desactivado"
+                  />
+                  <span className="text-xs text-cadet-gray">
+                    Si se llena (ej. 2), al montar el pedido en SAP se escribe &quot;VALIDAR ARTE&quot; en el texto libre de cada línea cuya última orden de fabricación supera esos meses, o que nunca se ha fabricado. Vacío = no aplica.
+                  </span>
                 </label>
               </div>
 
@@ -437,6 +460,7 @@ export default function ClienteDetailPage() {
                     setNits(cliente.nits.join(", ")); setKeywords(cliente.keywords.join(", "));
                     setCardCode(cliente.card_code); setPrompt(cliente.prompt);
                     setActivo(cliente.activo);
+                    setValidarArteMeses(mesesToInput(cliente.validar_arte_meses));
                   }
                   setSaveMsg(null); setError(null);
                 }}

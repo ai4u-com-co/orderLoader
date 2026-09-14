@@ -22,6 +22,8 @@ function isRetryableBackendError(err: unknown): boolean {
 const ENTITY_MAP: Record<string, string> = {
   AlternateCatNum: "catalogo/alternates",
   Orders: "orderloader/pedidos",
+  // FLX-103: última Orden de Fabricación por ItemCode (solo lectura)
+  LastProductionOrders: "production/last-orders",
 };
 
 function resolveEndpoint(endpoint: string): { urlPath: string; isSingle: boolean } {
