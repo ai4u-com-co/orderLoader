@@ -73,8 +73,9 @@ async function queryCatNum(
   return null;
 }
 
-/** Consulta AlternateCatNum y mapea SupplierCatNum → ItemCode de SAP. */
-async function fetchCatNumMappings(
+/** Consulta AlternateCatNum y mapea SupplierCatNum → ItemCode de SAP.
+ *  Exportada también para step4 (FLX-103, validar arte). */
+export async function fetchCatNumMappings(
   sap: SapGateway,
   cardCode: string,
   catNums: string[],

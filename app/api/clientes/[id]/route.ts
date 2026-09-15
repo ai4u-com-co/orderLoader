@@ -41,7 +41,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json() as {
       nombre?: string; nit_principal?: string; nits?: string[];
       keywords?: string[]; card_code?: string; prompt?: string; activo?: number;
+      validar_arte_meses?: number | string | null;
     };
+
+    // FLX-103: null/"" = desactivado; si viene, entero entre 1 y 24 meses.
+    let validarArteMeses: number | null | undefined = undefined;
+    if (body.validar_arte_meses !== undefined) {
+      const raw = body.validar_arte_meses;
+      if (raw === null || raw === "") {
+        validarArteMeses = null;
+      } else {
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1 || n > 24) {
+          return NextResponse.json({ ok: false, error: "validar_arte_meses debe ser un entero entre 1 y 24 (o vacío para desactivar)" }, { status: 400 });
+        }
+        validarArteMeses = n;
+      }
+    }
 
     const db = getDb();
     const existing = getClienteById(db, numId);
@@ -55,6 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       card_code:     body.card_code?.trim(),
       prompt:        body.prompt,
       activo:        body.activo,
+      validar_arte_meses: validarArteMeses,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

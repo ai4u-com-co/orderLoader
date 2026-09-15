@@ -11,13 +11,15 @@
 
 import fs from "fs";
 import path from "path";
-import { getDb, logPipeline } from "../db";
+import { getDb, logPipeline, getValidarArteMesesByCardCode } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
 import { odataString } from "../odata";
 import { getConfig } from "../config";
 import { resolveUnmatchedLine } from "../catalog-fallback";
+import { fetchCatNumMappings } from "./step3-sap-query";
+import { aplicarValidarArte, fetchUltimasOF, todayBogota } from "../validar-arte";
 
 export interface StepResult {
   procesados: number;
@@ -45,6 +47,11 @@ function lastBusinessDay(yyyymmdd: string): string {
 function maxFechaLineas(lines: { DeliveryDate?: string }[], fallback: string): string {
   const fechas = lines.map(l => l.DeliveryDate ?? fallback).filter(f => /^\d{8}$/.test(f));
   return fechas.length ? fechas.reduce((max, f) => (f > max ? f : max), fechas[0]) : fallback;
+}
+
+/** Mensaje corto de error para pipeline_log (sin stack trace). */
+function errMessage(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).slice(0, 500);
 }
 
 /** Intenta identificar qué SupplierCatNum causó el error SAP. */
@@ -180,6 +187,41 @@ export async function run(): Promise<StepResult> {
       continue;
     }
 
+    // ── FLX-103: "VALIDAR ARTE" en el texto libre de la línea ───────────────
+    // Solo si el cliente dueño del CardCode tiene validar_arte_meses configurado
+    // (/clientes/[id]). Se escribe EN el payload del POST (sin PATCH posterior).
+    // Fail-open: cualquier error deja el pedido subiendo igual, sin el aviso,
+    // con un WARN en pipeline_log para revisión manual.
+    let artMsg = "";
+    let validarArteMeses: number | null = null;
+    try {
+      validarArteMeses = getValidarArteMesesByCardCode(db, String(aiData.CardCode ?? ""));
+    } catch (e) {
+      const msg = `VALIDAR ARTE: no se pudo leer la configuración del cliente — pedido sin validación de arte: ${errMessage(e)}`;
+      logPipeline(db, oc, 4, "upload", "WARN", msg.slice(0, 1000));
+    }
+    if (validarArteMeses) {
+      try {
+        const cardCode = String(aiData.CardCode);
+        const { lines: conAviso, marcadas } = await aplicarValidarArte({
+          lines: lineas,
+          meses: validarArteMeses,
+          hoy: todayBogota(),
+          resolverItemCodes: catNums => fetchCatNumMappings(sap, cardCode, catNums),
+          obtenerUltimasOF: itemCodes => fetchUltimasOF(sap, itemCodes),
+        });
+        lineas.splice(0, lineas.length, ...conAviso);
+        if (marcadas.length) {
+          artMsg = ` — VALIDAR ARTE en ${marcadas.length} línea(s) (última OF > ${validarArteMeses} meses o sin OF): ${marcadas.join(", ")}`;
+          result.detalles.push(`  ✎ OC ${oc}: VALIDAR ARTE en ${marcadas.join(", ")}`);
+        }
+      } catch (e) {
+        const msg = `VALIDAR ARTE: falló la consulta de última OF — el pedido se sube sin el aviso, revisar arte manualmente: ${errMessage(e)}`;
+        logPipeline(db, oc, 4, "upload", "WARN", msg.slice(0, 1000));
+        result.detalles.push(`  ⚠ OC ${oc}: ${msg.slice(0, 300)}`);
+      }
+    }
+
     // ── Retry loop: excluir artículos rechazados por SAP y reintentar ────────
     let uploaded = false;
     let docEntry: unknown, docNum: string;
@@ -261,7 +303,7 @@ export async function run(): Promise<StepResult> {
     );
 
     const excMsg = allExcluded.length ? ` — ${allExcluded.length} artículo(s) excluido(s)` : "";
-    logPipeline(db, oc, 4, "upload", "OK", `DocEntry=${docEntry} DocNum=${docNum!}${excMsg}`);
+    logPipeline(db, oc, 4, "upload", "OK", `DocEntry=${docEntry} DocNum=${docNum!}${excMsg}${artMsg}`.slice(0, 1000));
     result.procesados++;
     result.detalles.push(`✓ OC ${oc} → SAP_MONTADO (DocEntry ${docEntry})${excMsg}`);
   }

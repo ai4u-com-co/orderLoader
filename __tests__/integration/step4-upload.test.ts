@@ -204,4 +204,113 @@ describe("step4-upload", () => {
       expect(payload.DocumentLines.every(l => l.SupplierCatNum === undefined)).toBe(true);
     });
   });
+
+  // ── FLX-103: "VALIDAR ARTE" por cliente configurado ─────────────────────
+  describe("FLX-103 validar arte (config por cliente: clientes_aprobados.validar_arte_meses)", () => {
+    const CARD = "CN123456789"; // mismo CardCode que usa buildSapOrderFixture
+
+    function insertCliente(meses: number | null, cardCode = CARD) {
+      _db.prepare(`
+        INSERT INTO clientes_aprobados (carpeta, nombre, nit_principal, card_code, prompt, validar_arte_meses)
+        VALUES (?, ?, ?, ?, '', ?)
+      `).run(`Cli${cardCode}`, "CLIENTE", cardCode.replace(/^\D+/, ""), cardCode, meses);
+    }
+
+    /** GET mock por entidad: idempotencia (Orders), catálogo, última OF. */
+    function mockGets(opts: { lastOrders?: unknown; lastOrdersError?: Error } = {}) {
+      mockSapGet.mockImplementation(async (endpoint: string, params?: Record<string, string>) => {
+        if (endpoint === "Orders") return { value: [] };
+        if (endpoint === "AlternateCatNum") {
+          const m = /Substitute eq '([^']+)'/.exec(params?.["$filter"] ?? "");
+          const map: Record<string, string> = { "SKU-VIEJA": "101001", "SKU-NUEVA": "101002" };
+          const code = m ? map[m[1]] : undefined;
+          return { value: code ? [{ ItemCode: code }] : [] };
+        }
+        if (endpoint === "LastProductionOrders") {
+          if (opts.lastOrdersError) throw opts.lastOrdersError;
+          return opts.lastOrders;
+        }
+        throw new Error(`GET inesperado: ${endpoint}`);
+      });
+    }
+
+    it("marca 'VALIDAR ARTE' en el FreeText SOLO de la línea con última OF > 2 meses, en el mismo POST /Orders", async () => {
+      insertCliente(2);
+      const oc = "OC-ARTE-001";
+      setupPedidoCatalogOk(oc, ["SKU-VIEJA", "SKU-NUEVA"]);
+      mockGets({
+        lastOrders: {
+          items: [
+            { itemCode: "101001", lastOrder: { docEntry: 1, docNum: 211, status: "Closed", postingDate: "2020-01-10", closeDate: "2020-01-20" } },
+            { itemCode: "101002", lastOrder: { docEntry: 2, docNum: 999, status: "Released", postingDate: "2999-01-01", closeDate: null } },
+          ],
+          asOf: "2026-09-14",
+        },
+      });
+      mockSapPost.mockResolvedValue({ DocEntry: 700, DocNum: "70" });
+
+      const { run } = await import("@/lib/steps/step4-upload");
+      const result = await run();
+
+      expect(result.procesados).toBe(1);
+      expect(mockSapPost).toHaveBeenCalledTimes(1);
+      const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
+      const vieja = payload.DocumentLines.find(l => l.SupplierCatNum === "SKU-VIEJA")!;
+      const nueva = payload.DocumentLines.find(l => l.SupplierCatNum === "SKU-NUEVA")!;
+      // FreeText original del fixture se conserva (concatenado, no pisado)
+      expect(vieja.FreeText).toBe("VALIDAR ARTE - Producto 1");
+      expect(nueva.FreeText).toBe("Producto 2");
+      expect(mockSapGet).toHaveBeenCalledWith("LastProductionOrders", { itemCodes: "101001,101002" });
+
+      const row = _db.prepare("SELECT estado FROM pedidos_maestro WHERE orden_compra = ?").get(oc) as { estado: string };
+      expect(row.estado).toBe("SAP_MONTADO");
+    });
+
+    it("cliente SIN la config → no consulta la última OF y el payload queda igual que hoy", async () => {
+      insertCliente(null);
+      const oc = "OC-ARTE-002";
+      setupPedidoCatalogOk(oc, ["SKU-VIEJA"]);
+      mockGets();
+      mockSapPost.mockResolvedValue({ DocEntry: 701, DocNum: "71" });
+
+      const { run } = await import("@/lib/steps/step4-upload");
+      await run();
+
+      expect(mockSapGet).not.toHaveBeenCalledWith("LastProductionOrders", expect.anything());
+      const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
+      expect(payload.DocumentLines[0].FreeText).toBe("Producto 1");
+    });
+
+    it("config de OTRO cliente no aplica a este CardCode", async () => {
+      insertCliente(2, "CN999999999");
+      const oc = "OC-ARTE-003";
+      setupPedidoCatalogOk(oc, ["SKU-VIEJA"]);
+      mockGets();
+      mockSapPost.mockResolvedValue({ DocEntry: 702, DocNum: "72" });
+
+      const { run } = await import("@/lib/steps/step4-upload");
+      await run();
+
+      expect(mockSapGet).not.toHaveBeenCalledWith("LastProductionOrders", expect.anything());
+    });
+
+    it("fail-open: si falla la consulta de la última OF, el pedido se crea igual sin el texto y queda un WARN", async () => {
+      insertCliente(2);
+      const oc = "OC-ARTE-004";
+      setupPedidoCatalogOk(oc, ["SKU-VIEJA"]);
+      mockGets({ lastOrdersError: new Error("Backend GET → 404: not found") });
+      mockSapPost.mockResolvedValue({ DocEntry: 703, DocNum: "73" });
+
+      const { logPipeline } = await import("@/lib/db");
+      const { run } = await import("@/lib/steps/step4-upload");
+      const result = await run();
+
+      expect(result.procesados).toBe(1);
+      const payload = mockSapPost.mock.calls[0][1] as { DocumentLines: Array<Record<string, unknown>> };
+      expect(payload.DocumentLines[0].FreeText).toBe("Producto 1");
+      expect(vi.mocked(logPipeline)).toHaveBeenCalledWith(
+        expect.anything(), oc, 4, "upload", "WARN", expect.stringContaining("VALIDAR ARTE"),
+      );
+    });
+  });
 });
