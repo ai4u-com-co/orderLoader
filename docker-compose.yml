@@ -10,7 +10,9 @@ services:
     ports:
       # Puerto 80 (estándar) además del 3000: redes/ISP que filtran puertos no
       # estándar (ej. San Andrés) bloquean el 3000 pero dejan pasar el 80.
-      # Acceso: http://136.114.54.107 (sin :3000) o el viejo http://136.114.54.107:3000
+      # Acceso: http://136.112.38.104 (sin :3000) o el viejo http://136.112.38.104:3000
+      # IP estática reservada en GCP (orderloader-vm-ip). Cambió el 2026-09-15:
+      # la anterior (136.114.54.107) era efímera y se perdió al apagarse la VM.
       - "80:3000"
       - "3000:3000"
     environment:
