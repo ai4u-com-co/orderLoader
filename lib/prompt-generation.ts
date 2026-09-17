@@ -58,7 +58,7 @@ Analyze the provided purchase order document and generate a JSON object that fai
   * Product code (SupplierCatNum) → [IDENTIFY THE COLUMN NAME IN THIS DOCUMENT]
   * Quantity (Quantity) → [IDENTIFY THE COLUMN NAME]
   * Unit price (UnitPrice) → [IDENTIFY THE COLUMN NAME]. Use 0 if not printed.
-  * Line notes (FreeText) → verbatim descriptive text for this line, "" if none
+  * Line notes (FreeText) → verbatim descriptive text for this line, "" if none. **IMPORTANT — check for a store/branch/cost-center column**: multi-store purchase orders (large retail chains, franchise networks) commonly repeat the SAME product code with the SAME general delivery date across many lines — one line per store — distinguished only by a column like "Tienda", "Sucursal", "Centro", "Dependencia de Entrega", "Store", "Branch", or a delivery-point code + name. If THIS document has such a column, you MUST copy its value verbatim into FreeText for every line (e.g. "2035 ÉXITO ENVIGADO", "T068 OFFCORSS FLORIDA MEDELLIN") — this is NOT optional when the column exists, because a downstream validation step rejects the whole order as "duplicate line" when it cannot tell two same-product-same-date lines apart. If no such column exists, use "" as usual.
   * Line delivery date (DeliveryDate) → line-specific date if present, otherwise DocDueDate. YYYYMMDD.
 
 ### 3. DATA TRANSFORMATION
@@ -119,6 +119,7 @@ Before generating the response, verify:
 - ✅ UnitPrice × Quantity ≈ line subtotal for every row — if not, the price column is wrong
 - ✅ DocumentLines preserves the same item order as the PDF — no grouping of identical items
 - ✅ SupplierCatNum values are copied character-for-character as printed (leading zeros preserved if present)
+- ✅ If this is a multi-store order (same product + same date repeated across lines), FreeText is filled per line with the store/branch/cost-center identifier so repeated lines are correctly distinguished
 - ✅ Valid JSON syntax — no trailing commas, no extra fields
 
 ## RESPONSE FORMAT
