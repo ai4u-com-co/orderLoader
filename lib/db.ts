@@ -214,6 +214,15 @@ export function migrate(): void {
     { name: "007_add_items_placeholder",    sql: `ALTER TABLE pedidos_maestro ADD COLUMN items_placeholder TEXT` },
     // FLX-103: meses sin fabricar para marcar "VALIDAR ARTE" (NULL = desactivado)
     { name: "008_add_validar_arte_meses",   sql: `ALTER TABLE clientes_aprobados ADD COLUMN validar_arte_meses INTEGER` },
+    // FLX-103 (ajuste 21-sep-2026): el cliente pidió medir en días, no meses
+    // calendario, y reducir el umbral de New Stetic de 2 meses a 7 semanas
+    // exactas (49 días). Columna aditiva — validar_arte_meses queda sin usar,
+    // nunca se borra ni se renombra. Backfill idempotente: solo toca las filas
+    // que hoy tienen el valor default (2 meses) de New Stetic.
+    { name: "009_add_validar_arte_dias",    sql: `
+      ALTER TABLE clientes_aprobados ADD COLUMN validar_arte_dias INTEGER;
+      UPDATE clientes_aprobados SET validar_arte_dias = 49 WHERE validar_arte_meses = 2;
+    ` },
   ];
 
   for (const m of migrations) {
@@ -361,22 +370,24 @@ export interface ClienteAprobado {
   activo: number;
   ts_creado: string;
   ts_modificado: string;
-  /** FLX-103: meses sin fabricar para marcar "VALIDAR ARTE" en las líneas; null = desactivado */
+  /** FLX-103: campo legacy en meses calendario, ya sin uso — se conserva la columna, no se escribe más. */
   validar_arte_meses?: number | null;
+  /** FLX-103: días sin fabricar para marcar "VALIDAR ARTE" en las líneas; null = desactivado */
+  validar_arte_dias?: number | null;
 }
 
 /**
  * FLX-103: config "VALIDAR ARTE" del cliente dueño del CardCode del pedido.
  * null si ningún cliente con ese CardCode la tiene activa (> 0).
  */
-export function getValidarArteMesesByCardCode(db: Database.Database, cardCode: string): number | null {
+export function getValidarArteDiasByCardCode(db: Database.Database, cardCode: string): number | null {
   if (!cardCode) return null;
   const row = db.prepare(`
-    SELECT validar_arte_meses AS meses FROM clientes_aprobados
-    WHERE card_code = ? AND validar_arte_meses > 0
+    SELECT validar_arte_dias AS dias FROM clientes_aprobados
+    WHERE card_code = ? AND validar_arte_dias > 0
     ORDER BY activo DESC LIMIT 1
-  `).get(cardCode) as { meses: number } | undefined;
-  return row?.meses ?? null;
+  `).get(cardCode) as { dias: number } | undefined;
+  return row?.dias ?? null;
 }
 
 export function getClientes(db: Database.Database): ClienteAprobado[] {
@@ -419,7 +430,7 @@ export function updateCliente(db: Database.Database, id: number, data: {
   nombre?: string; nit_principal?: string; nits_json?: string;
   keywords_json?: string; card_code?: string; prompt?: string; activo?: number;
   /** null = desactivar (se escribe NULL); undefined = no tocar */
-  validar_arte_meses?: number | null;
+  validar_arte_dias?: number | null;
 }): void {
   const fields = Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined);
   if (fields.length === 0) return;
