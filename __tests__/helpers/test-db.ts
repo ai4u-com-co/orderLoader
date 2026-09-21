@@ -73,7 +73,8 @@ export function createTestDb(): Database.Database {
       activo           INTEGER NOT NULL DEFAULT 1,
       ts_creado        TEXT DEFAULT (datetime('now')),
       ts_modificado    TEXT DEFAULT (datetime('now')),
-      validar_arte_meses INTEGER
+      validar_arte_meses INTEGER,
+      validar_arte_dias INTEGER
     );
     CREATE TABLE IF NOT EXISTS imap_pending_moves (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,

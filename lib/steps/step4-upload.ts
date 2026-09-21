@@ -11,7 +11,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getDb, logPipeline, getValidarArteMesesByCardCode } from "../db";
+import { getDb, logPipeline, getValidarArteDiasByCardCode } from "../db";
 import { getActiveSap, clearActiveSap } from "../sap-gateway";
 import type { SapB1Order } from "./step1-parse";
 import { OrderStatus } from "../constants";
@@ -188,31 +188,31 @@ export async function run(): Promise<StepResult> {
     }
 
     // ── FLX-103: "VALIDAR ARTE" en el texto libre de la línea ───────────────
-    // Solo si el cliente dueño del CardCode tiene validar_arte_meses configurado
+    // Solo si el cliente dueño del CardCode tiene validar_arte_dias configurado
     // (/clientes/[id]). Se escribe EN el payload del POST (sin PATCH posterior).
     // Fail-open: cualquier error deja el pedido subiendo igual, sin el aviso,
     // con un WARN en pipeline_log para revisión manual.
     let artMsg = "";
-    let validarArteMeses: number | null = null;
+    let validarArteDias: number | null = null;
     try {
-      validarArteMeses = getValidarArteMesesByCardCode(db, String(aiData.CardCode ?? ""));
+      validarArteDias = getValidarArteDiasByCardCode(db, String(aiData.CardCode ?? ""));
     } catch (e) {
       const msg = `VALIDAR ARTE: no se pudo leer la configuración del cliente — pedido sin validación de arte: ${errMessage(e)}`;
       logPipeline(db, oc, 4, "upload", "WARN", msg.slice(0, 1000));
     }
-    if (validarArteMeses) {
+    if (validarArteDias) {
       try {
         const cardCode = String(aiData.CardCode);
         const { lines: conAviso, marcadas } = await aplicarValidarArte({
           lines: lineas,
-          meses: validarArteMeses,
+          dias: validarArteDias,
           hoy: todayBogota(),
           resolverItemCodes: catNums => fetchCatNumMappings(sap, cardCode, catNums),
           obtenerUltimasOF: itemCodes => fetchUltimasOF(sap, itemCodes),
         });
         lineas.splice(0, lineas.length, ...conAviso);
         if (marcadas.length) {
-          artMsg = ` — VALIDAR ARTE en ${marcadas.length} línea(s) (última OF > ${validarArteMeses} meses o sin OF): ${marcadas.join(", ")}`;
+          artMsg = ` — VALIDAR ARTE en ${marcadas.length} línea(s) (última OF > ${validarArteDias} días o sin OF): ${marcadas.join(", ")}`;
           result.detalles.push(`  ✎ OC ${oc}: VALIDAR ARTE en ${marcadas.join(", ")}`);
         }
       } catch (e) {

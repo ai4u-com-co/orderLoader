@@ -1,14 +1,14 @@
 /**
  * FLX-103 (Flexoimpresos / New Stetic): "VALIDAR ARTE" en el Texto libre de la
  * línea del pedido cuando la última Orden de Fabricación de la referencia supera
- * N meses calendario. Reglas puras + adaptador al gateway.
+ * N días. Reglas puras + adaptador al gateway.
  */
 import { describe, it, expect, vi } from "vitest";
 import type { SapGateway } from "@/lib/sap-gateway";
 import {
   VALIDAR_ARTE_TEXTO,
   todayBogota,
-  addCalendarMonths,
+  addDays,
   requiereValidarArte,
   aplicarTextoValidarArte,
   aplicarValidarArte,
@@ -22,33 +22,32 @@ describe("todayBogota", () => {
   });
 });
 
-describe("addCalendarMonths", () => {
-  it("suma meses calendario", () => {
-    expect(addCalendarMonths("2026-04-18", 2)).toBe("2026-06-18");
-    expect(addCalendarMonths("2026-11-10", 2)).toBe("2027-01-10");
+describe("addDays", () => {
+  it("suma días", () => {
+    expect(addDays("2026-07-10", 49)).toBe("2026-08-28");
+    expect(addDays("2026-11-10", 30)).toBe("2026-12-10");
   });
-  it("ajusta al último día del mes cuando el día no existe", () => {
-    expect(addCalendarMonths("2025-12-31", 2)).toBe("2026-02-28");
-    expect(addCalendarMonths("2027-12-31", 2)).toBe("2028-02-29");
+  it("cruza fin de año y bisiesto sin trampas", () => {
+    expect(addDays("2025-12-20", 49)).toBe("2026-02-07");
+    expect(addDays("2027-12-31", 60)).toBe("2028-02-29"); // 2028 es bisiesto
   });
 });
 
-describe("requiereValidarArte (2 meses)", () => {
-  it("última OF hace exactamente 2 meses → NO (no supera)", () => {
-    expect(requiereValidarArte("2026-07-14", 2, "2026-09-14")).toBe(false);
+describe("requiereValidarArte (7 semanas = 49 días — umbral real de New Stetic)", () => {
+  it("última OF hace exactamente 49 días → NO (no supera, estrictamente mayor)", () => {
+    expect(requiereValidarArte("2026-07-31", 49, "2026-09-18")).toBe(false);
   });
-  it("última OF hace 2 meses y 1 día → SÍ", () => {
-    expect(requiereValidarArte("2026-07-13", 2, "2026-09-14")).toBe(true);
+  it("última OF hace 49 días y 1 más → SÍ", () => {
+    expect(requiereValidarArte("2026-07-30", 49, "2026-09-18")).toBe(true);
   });
   it("última OF reciente → NO", () => {
-    expect(requiereValidarArte("2026-08-30", 2, "2026-09-14")).toBe(false);
+    expect(requiereValidarArte("2026-09-10", 49, "2026-09-18")).toBe(false);
   });
   it("referencia sin ninguna OF (nunca fabricada) → SÍ", () => {
-    expect(requiereValidarArte(null, 2, "2026-09-14")).toBe(true);
+    expect(requiereValidarArte(null, 49, "2026-09-18")).toBe(true);
   });
-  it("fin de mes: 31-dic + 2 meses = 28-feb; el 1-mar ya supera", () => {
-    expect(requiereValidarArte("2025-12-31", 2, "2026-02-28")).toBe(false);
-    expect(requiereValidarArte("2025-12-31", 2, "2026-03-01")).toBe(true);
+  it("regresión ticket FLX-103 (21-sep-2026): referencia 100591, CloseDate 10-jul-2026, hoy 18-sep-2026 → SÍ (10-jul + 49 días = 28-ago, ya pasó)", () => {
+    expect(requiereValidarArte("2026-07-10", 49, "2026-09-18")).toBe(true);
   });
 });
 
@@ -73,7 +72,7 @@ describe("aplicarTextoValidarArte", () => {
 describe("aplicarValidarArte", () => {
   const hoy = "2026-09-14";
 
-  it("marca solo las líneas cuya última OF supera los meses; no toca las recientes", async () => {
+  it("marca solo las líneas cuya última OF supera los días; no toca las recientes", async () => {
     const resolverItemCodes = vi.fn(async () => new Map([["CAT-VIEJA", "101001"], ["CAT-NUEVA", "101002"], ["CAT-NUNCA", "101003"]]));
     const obtenerUltimasOF = vi.fn(async () => new Map<string, string | null>([
       ["101001", "2026-04-18"],
@@ -87,7 +86,7 @@ describe("aplicarValidarArte", () => {
         { SupplierCatNum: "CAT-NUEVA", FreeText: "", Quantity: 2 },
         { SupplierCatNum: "CAT-NUNCA", Quantity: 3 },
       ],
-      meses: 2,
+      dias: 49,
       hoy,
       resolverItemCodes,
       obtenerUltimasOF,
@@ -109,7 +108,7 @@ describe("aplicarValidarArte", () => {
         { SupplierCatNum: "CAT-SIN-MAPEO", FreeText: "" },
         { SupplierCatNum: "CAT-OK", FreeText: "" },
       ],
-      meses: 2,
+      dias: 49,
       hoy,
       resolverItemCodes,
       obtenerUltimasOF,
@@ -123,7 +122,7 @@ describe("aplicarValidarArte", () => {
   it("si el gateway no devuelve un ItemCode pedido, no lo marca (desconocido ≠ nunca fabricado)", async () => {
     const r = await aplicarValidarArte({
       lines: [{ SupplierCatNum: "CAT-A", FreeText: "" }],
-      meses: 2,
+      dias: 49,
       hoy,
       resolverItemCodes: async () => new Map([["CAT-A", "101001"]]),
       obtenerUltimasOF: async () => new Map(),
@@ -135,7 +134,7 @@ describe("aplicarValidarArte", () => {
   it("propaga el error de la consulta (el llamador decide fail-open)", async () => {
     await expect(aplicarValidarArte({
       lines: [{ SupplierCatNum: "CAT-A", FreeText: "" }],
-      meses: 2,
+      dias: 49,
       hoy,
       resolverItemCodes: async () => new Map([["CAT-A", "101001"]]),
       obtenerUltimasOF: async () => { throw new Error("Backend GET → 502"); },
@@ -144,7 +143,7 @@ describe("aplicarValidarArte", () => {
 });
 
 describe("fetchUltimasOF", () => {
-  it("llama al gateway production/last-orders y mapea itemCode → postingDate (null si nunca)", async () => {
+  it("llama al gateway production/last-orders y prefiere closeDate sobre postingDate (FLX-103, 21-sep-2026)", async () => {
     const get = vi.fn(async () => ({
       items: [
         { itemCode: "101001", lastOrder: { docEntry: 1, docNum: 211, status: "Closed", postingDate: "2026-04-18", closeDate: "2026-04-20" } },
@@ -157,9 +156,23 @@ describe("fetchUltimasOF", () => {
     const map = await fetchUltimasOF(sap, ["101001", "101003"]);
 
     expect(get).toHaveBeenCalledWith("LastProductionOrders", { itemCodes: "101001,101003" });
-    expect(map.get("101001")).toBe("2026-04-18");
+    expect(map.get("101001")).toBe("2026-04-20"); // closeDate, no postingDate
     expect(map.get("101003")).toBeNull();
     expect(map.has("OTRO")).toBe(false);
+  });
+
+  it("OF abierta sin closeDate → cae a postingDate (fallback: mejor eso que perder el dato)", async () => {
+    const get = vi.fn(async () => ({
+      items: [
+        { itemCode: "101002", lastOrder: { docEntry: 2, docNum: 999, status: "Released", postingDate: "2026-09-01", closeDate: null } },
+      ],
+      asOf: "2026-09-14",
+    }));
+    const sap = { get, post: vi.fn() } as unknown as SapGateway;
+
+    const map = await fetchUltimasOF(sap, ["101002"]);
+
+    expect(map.get("101002")).toBe("2026-09-01");
   });
 
   it("respuesta con forma inesperada → lanza (no asume 'nunca fabricado')", async () => {

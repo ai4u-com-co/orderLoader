@@ -41,21 +41,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json() as {
       nombre?: string; nit_principal?: string; nits?: string[];
       keywords?: string[]; card_code?: string; prompt?: string; activo?: number;
-      validar_arte_meses?: number | string | null;
+      validar_arte_dias?: number | string | null;
     };
 
-    // FLX-103: null/"" = desactivado; si viene, entero entre 1 y 24 meses.
-    let validarArteMeses: number | null | undefined = undefined;
-    if (body.validar_arte_meses !== undefined) {
-      const raw = body.validar_arte_meses;
+    // FLX-103: null/"" = desactivado; si viene, entero entre 1 y 730 días (2 años).
+    let validarArteDias: number | null | undefined = undefined;
+    if (body.validar_arte_dias !== undefined) {
+      const raw = body.validar_arte_dias;
       if (raw === null || raw === "") {
-        validarArteMeses = null;
+        validarArteDias = null;
       } else {
         const n = Number(raw);
-        if (!Number.isInteger(n) || n < 1 || n > 24) {
-          return NextResponse.json({ ok: false, error: "validar_arte_meses debe ser un entero entre 1 y 24 (o vacío para desactivar)" }, { status: 400 });
+        if (!Number.isInteger(n) || n < 1 || n > 730) {
+          return NextResponse.json({ ok: false, error: "validar_arte_dias debe ser un entero entre 1 y 730 (o vacío para desactivar)" }, { status: 400 });
         }
-        validarArteMeses = n;
+        validarArteDias = n;
       }
     }
 
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       card_code:     body.card_code?.trim(),
       prompt:        body.prompt,
       activo:        body.activo,
-      validar_arte_meses: validarArteMeses,
+      validar_arte_dias: validarArteDias,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

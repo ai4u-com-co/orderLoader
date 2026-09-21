@@ -206,14 +206,14 @@ describe("step4-upload", () => {
   });
 
   // ── FLX-103: "VALIDAR ARTE" por cliente configurado ─────────────────────
-  describe("FLX-103 validar arte (config por cliente: clientes_aprobados.validar_arte_meses)", () => {
+  describe("FLX-103 validar arte (config por cliente: clientes_aprobados.validar_arte_dias)", () => {
     const CARD = "CN123456789"; // mismo CardCode que usa buildSapOrderFixture
 
-    function insertCliente(meses: number | null, cardCode = CARD) {
+    function insertCliente(dias: number | null, cardCode = CARD) {
       _db.prepare(`
-        INSERT INTO clientes_aprobados (carpeta, nombre, nit_principal, card_code, prompt, validar_arte_meses)
+        INSERT INTO clientes_aprobados (carpeta, nombre, nit_principal, card_code, prompt, validar_arte_dias)
         VALUES (?, ?, ?, ?, '', ?)
-      `).run(`Cli${cardCode}`, "CLIENTE", cardCode.replace(/^\D+/, ""), cardCode, meses);
+      `).run(`Cli${cardCode}`, "CLIENTE", cardCode.replace(/^\D+/, ""), cardCode, dias);
     }
 
     /** GET mock por entidad: idempotencia (Orders), catálogo, última OF. */
@@ -234,8 +234,8 @@ describe("step4-upload", () => {
       });
     }
 
-    it("marca 'VALIDAR ARTE' en el FreeText SOLO de la línea con última OF > 2 meses, en el mismo POST /Orders", async () => {
-      insertCliente(2);
+    it("marca 'VALIDAR ARTE' en el FreeText SOLO de la línea con última OF (por CloseDate) > 49 días, en el mismo POST /Orders", async () => {
+      insertCliente(49);
       const oc = "OC-ARTE-001";
       setupPedidoCatalogOk(oc, ["SKU-VIEJA", "SKU-NUEVA"]);
       mockGets({
@@ -282,7 +282,7 @@ describe("step4-upload", () => {
     });
 
     it("config de OTRO cliente no aplica a este CardCode", async () => {
-      insertCliente(2, "CN999999999");
+      insertCliente(49, "CN999999999");
       const oc = "OC-ARTE-003";
       setupPedidoCatalogOk(oc, ["SKU-VIEJA"]);
       mockGets();
@@ -295,7 +295,7 @@ describe("step4-upload", () => {
     });
 
     it("fail-open: si falla la consulta de la última OF, el pedido se crea igual sin el texto y queda un WARN", async () => {
-      insertCliente(2);
+      insertCliente(49);
       const oc = "OC-ARTE-004";
       setupPedidoCatalogOk(oc, ["SKU-VIEJA"]);
       mockGets({ lastOrdersError: new Error("Backend GET → 404: not found") });
