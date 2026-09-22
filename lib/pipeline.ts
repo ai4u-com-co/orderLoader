@@ -372,7 +372,12 @@ export async function runPipeline(opts: PipelineOptions = {}): Promise<StepResul
     onStep?.(result);
   };
 
-  setRunContext({ pipeline_run_id: runId });
+  // tenant: el panel admin filtra por tenant_id (columna dedicada en platform_logs,
+  // normalizada contra tenants.id) — sin esto, orderLoader solo era identificable
+  // por el nombre del `service` (orderloader-tamaprint/orderloader-flexoimpresos),
+  // y tenant_id quedaba null en el 100% de sus logs, debilitando el filtrado del
+  // panel y el clustering del Nightly Error Fixer.
+  setRunContext({ pipeline_run_id: runId, tenant: getConfig().tenant });
   log.info("─────────────────────────────────── pipeline start ───────────────────────────────────");
 
   // Alertar si el cron no corrió en las últimas 25h
