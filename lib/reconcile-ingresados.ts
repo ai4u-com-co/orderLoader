@@ -18,6 +18,7 @@ import { getConfig } from "./config";
 import { getDb } from "./db";
 import { sendAlertEmail } from "./mailer";
 import { getLogger } from "./logger";
+import { parseSqliteUtc } from "./dates";
 
 const log = getLogger("reconcile-ingresados");
 
@@ -57,10 +58,6 @@ export async function findCorreosHuerfanosEnIngresados(diasAtras = 7): Promise<C
   try {
     const lock = await client.getMailboxLock(carpeta, { readOnly: true });
     try {
-      const desde = new Date(Date.now() - diasAtras * 24 * 3_600_000);
-      const uids = (await client.search({ since: desde }, { uid: true })) || [];
-      if (uids.length === 0) return huerfanos;
-
       const registrados = new Set(
         (
           db
@@ -71,6 +68,33 @@ export async function findCorreosHuerfanosEnIngresados(diasAtras = 7): Promise<C
             .all(`%${config.inboxFolderName}%`) as Array<{ message_id: string }>
         ).map((r) => r.message_id)
       );
+
+      // El rastreo del movimiento FINAL a Ingresados recién existe desde este fix
+      // (ver step7-archive.ts) — todo lo que ya estaba en la carpeta antes de esa
+      // fecha nunca tuvo la chance de quedar registrado, aunque el pipeline sí lo
+      // haya movido de verdad. Sin este piso, la primera corrida marca como
+      // "huérfano" TODO el historial acumulado — pasó en producción el 2026-09-22:
+      // 73 falsos positivos en un correo real, por comparar contra una tabla que
+      // todavía no tenía nada que comparar. Nunca mirar antes del primer
+      // movimiento a Ingresados que sí quedó rastreado.
+      const primerRastreo = db
+        .prepare(
+          `SELECT MIN(ts_creado) as ts FROM imap_pending_moves
+           WHERE estado = 'COMPLETADO' AND carpeta_destino LIKE ?`
+        )
+        .get(`%${config.inboxFolderName}%`) as { ts: string | null };
+
+      if (!primerRastreo.ts) {
+        log.info("Todavía no hay ningún movimiento a Ingresados rastreado — nada confiable contra qué comparar aún.");
+        return huerfanos;
+      }
+
+      const ventana = new Date(Date.now() - diasAtras * 24 * 3_600_000);
+      const piso = parseSqliteUtc(primerRastreo.ts);
+      const desde = ventana > piso ? ventana : piso;
+
+      const uids = (await client.search({ since: desde }, { uid: true })) || [];
+      if (uids.length === 0) return huerfanos;
 
       for await (const msg of client.fetch(uids, { uid: true, envelope: true, internalDate: true }, { uid: true })) {
         const messageId = msg.envelope?.messageId ?? null;
