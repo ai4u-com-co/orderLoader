@@ -1,0 +1,80 @@
+name: Watchdog OrderLoader (Tamaprint)
+
+# Vigía EXTERNO — corre en la infraestructura de GitHub, no en la VM. Necesario porque
+# las alertas de "cron perdido" que ya existen (lib/pipeline.ts checkMissedCron) viven
+# DENTRO del propio pipeline: si la VM entera está caída (como el apagón por facturación
+# GCP del 2026-09-15, ~3.5h) o el cron del sistema deja de disparar, esa alerta interna
+# nunca llega a correr — nadie se entera. Este workflow consulta /api/health desde afuera,
+# así que detecta justo el caso que la alerta interna no puede detectar.
+#
+# TAMA-048 (2026-09-21/22): la OC de COMODIN llegó durante ese apagón y nunca se procesó,
+# sin que nada avisara. Este workflow es la salvaguarda para que la próxima vez sí avise.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar /api/health
+        id: health
+        run: |
+          set +e
+          BODY=$(curl -sS --max-time 15 http://136.112.38.104/api/health)
+          STATUS=$?
+          set -e
+          if [ $STATUS -ne 0 ] || [ -z "$BODY" ]; then
+            echo "✗ La VM no respondió (curl exit=$STATUS). Puede estar apagada o sin red."
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "reachable=true" >> "$GITHUB_OUTPUT"
+          echo "$BODY" | jq .
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluar salud y horario laboral (Bogotá)
+        env:
+          REACHABLE: ${{ steps.health.outputs.reachable }}
+          BODY: ${{ steps.health.outputs.body }}
+        run: |
+          if [ "$REACHABLE" != "true" ]; then
+            echo "::error::La VM de Tamaprint (136.112.38.104) no responde a /api/health. Revisar si está caída (ej. facturación GCP, como el incidente del 2026-09-15) antes de asumir que es solo la red."
+            exit 1
+          fi
+
+          HOURS_AGO=$(echo "$BODY" | jq -r '.pipeline.hours_ago')
+          MISSED_CRON=$(echo "$BODY" | jq -r '.pipeline.missed_cron')
+          LAST_RUN=$(echo "$BODY" | jq -r '.pipeline.last_run')
+          BOGOTA_HOUR=$(TZ=America/Bogota date +%H)
+
+          echo "Última corrida: $LAST_RUN ($HOURS_AGO horas atrás) | missed_cron=$MISSED_CRON | hora Bogotá=$BOGOTA_HOUR"
+
+          # El cron de la VM solo corre 6am-10pm Bogotá (docker-compose/.crontab: "0 6-22 * * *"),
+          # pausa nocturna intencional — no evaluar frescura fuera de ese horario, o cada noche
+          # dispararía un falso positivo. Se da 1h de margen tras el cierre (hasta las 23).
+          if [ "$BOGOTA_HOUR" -lt 6 ] || [ "$BOGOTA_HOUR" -ge 23 ]; then
+            echo "Fuera de horario laboral — la pausa nocturna es intencional, no se evalúa frescura."
+            exit 0
+          fi
+
+          if [ "$MISSED_CRON" = "true" ]; then
+            echo "::error::pipeline.missed_cron=true — el pipeline lleva $HOURS_AGO horas sin correr en horario laboral."
+            exit 1
+          fi
+
+          # Umbral más estricto que el interno (25h, pensado para sobrevivir un fin de
+          # semana sin pedidos): en horario laboral el cron corre cada hora, así que más
+          # de 2h de silencio ya es anómalo.
+          THRESHOLD=2
+          OVER=$(echo "$HOURS_AGO > $THRESHOLD" | bc -l 2>/dev/null || echo "0")
+          if [ "$OVER" = "1" ]; then
+            echo "::error::El pipeline lleva $HOURS_AGO horas sin correr en horario laboral (umbral: ${THRESHOLD}h). Última corrida: $LAST_RUN."
+            exit 1
+          fi
+
+          echo "✓ Saludable."
