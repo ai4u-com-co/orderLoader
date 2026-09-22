@@ -281,6 +281,16 @@ export async function recoverPendingMoves(): Promise<string[]> {
     auth: { user: config.emailUser, pass: config.emailPass },
     logger: false,
   });
+  // ImapFlow es un EventEmitter: sin este listener, un error de socket asíncrono —
+  // desacoplado de cualquier promesa que este código esté esperando (ej. un timeout
+  // que llega DESPUÉS de connect()/logout()) — se propaga como excepción NO CAPTURADA
+  // a nivel de proceso. Visto en producción 2026-09-17: "Error: Socket timeout" /
+  // "⨯ uncaughtException" justo después de "pipeline done", en 2 corridas con IMAP
+  // "Command failed". No relanzar: el try/catch de abajo ya reporta el fallo de
+  // conexión; este handler solo evita que un 'error' sin oyentes tumbe el proceso.
+  imapClient.on("error", (err) => {
+    console.error("[step0-download] IMAP socket error (post-conexión):", String(err));
+  });
 
   try {
     await imapClient.connect();
@@ -727,6 +737,16 @@ export async function run(): Promise<StepResult> {
     auth: { user: config.emailUser, pass: config.emailPass },
     logger: false,
   });
+  // ImapFlow es un EventEmitter: sin este listener, un error de socket asíncrono —
+  // desacoplado de cualquier promesa que este código esté esperando (ej. un timeout
+  // que llega DESPUÉS de connect()/logout()) — se propaga como excepción NO CAPTURADA
+  // a nivel de proceso. Visto en producción 2026-09-17: "Error: Socket timeout" /
+  // "⨯ uncaughtException" justo después de "pipeline done", en 2 corridas con IMAP
+  // "Command failed". No relanzar: el try/catch de abajo ya reporta el fallo de
+  // conexión; este handler solo evita que un 'error' sin oyentes tumbe el proceso.
+  imapClient.on("error", (err) => {
+    console.error("[step0-download] IMAP socket error (post-conexión):", String(err));
+  });
 
   try {
     await imapClient.connect();
@@ -1118,7 +1138,15 @@ export async function run(): Promise<StepResult> {
     await imapClient.logout();
   } catch (e) {
     result.errores++;
-    result.detalles.push(`Error de conexión IMAP: ${String(e)}`);
+    const msg = `Error de conexión IMAP: ${String(e)}`;
+    result.detalles.push(msg);
+    // Sin esto, un fallo ANTES de la primera fila exitosa (connect/login/lock) queda
+    // invisible para pipeline_log — solo vive en el log crudo de Docker. Confirmado en
+    // producción (17-sep-2026): 2 corridas con "Command failed" dispararon la alerta de
+    // 100% de error pero no dejaron ningún rastro en la tabla que alimenta el dashboard.
+    try {
+      logPipeline(getDb(), null, 0, "download", "ERROR", msg);
+    } catch { /* DB podría no estar disponible aún */ }
   }
 
   return result;
