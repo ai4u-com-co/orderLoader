@@ -103,10 +103,14 @@ describe("reconcile-ingresados — detecta correos que llegaron a Ingresados sin
 
   it("no marca huérfano si el move quedó PENDIENTE (aún no completó) — evita falsos positivos en corridas en curso", async () => {
     const { findCorreosHuerfanosEnIngresados } = await import("@/lib/reconcile-ingresados");
-    const { getDb, migrate, insertPendingMove } = await import("@/lib/db");
+    const { getDb, migrate, insertPendingMove, completePendingMove } = await import("@/lib/db");
     migrate();
 
     const db = getDb();
+    // Piso: al menos un move ya rastreado y completado, para que la ventana exista.
+    const baseId = insertPendingMove(db, "<otro-cualquiera@proveedor.com>", 999, "INBOX.A A REVISAR IA", "INBOX.A B INGRESADO");
+    completePendingMove(db, baseId);
+
     // El registrado (uid 100) queda PENDIENTE (no completado) — solo debe importar el
     // huérfano real (uid 101), que de por sí nunca tuvo fila.
     insertPendingMove(db, "<registrado@proveedor.com>", 100, "INBOX.A A REVISAR IA", "INBOX.A B INGRESADO");
@@ -118,16 +122,31 @@ describe("reconcile-ingresados — detecta correos que llegaron a Ingresados sin
 
   it("manda un correo resumen con el conteo de huérfanos cuando hay al menos uno", async () => {
     const { reconciliarIngresadosYAlertar } = await import("@/lib/reconcile-ingresados");
-    const { migrate } = await import("@/lib/db");
+    const { getDb, migrate, insertPendingMove, completePendingMove } = await import("@/lib/db");
     migrate();
+
+    // Piso: un move rastreado que no es ninguno de los 2 mensajes reales de esta prueba.
+    const db = getDb();
+    const baseId = insertPendingMove(db, "<otro-cualquiera@proveedor.com>", 999, "INBOX.A A REVISAR IA", "INBOX.A B INGRESADO");
+    completePendingMove(db, baseId);
 
     const { sendAlertEmail } = await import("@/lib/mailer");
     const huerfanos = await reconciliarIngresadosYAlertar(30);
 
-    expect(huerfanos).toHaveLength(2); // nada registrado en esta corrida → los 2 salen huérfanos
+    expect(huerfanos).toHaveLength(2); // ninguno de los 2 está registrado → ambos salen huérfanos
     expect(sendAlertEmail).toHaveBeenCalledTimes(1);
     const [subject] = vi.mocked(sendAlertEmail).mock.calls[0];
     expect(subject).toContain("2 correo(s) en Ingresados");
+  });
+
+  it("nunca mira antes del primer movimiento rastreado — evita el aluvión de falsos positivos del historial viejo (2026-09-22)", async () => {
+    const { findCorreosHuerfanosEnIngresados } = await import("@/lib/reconcile-ingresados");
+    const { migrate } = await import("@/lib/db");
+    migrate();
+
+    // Sin ningún move rastreado todavía: no hay piso confiable, no se marca nada.
+    const huerfanos = await findCorreosHuerfanosEnIngresados(30);
+    expect(huerfanos).toEqual([]);
   });
 
   it("no manda correo si no hay huérfanos", async () => {

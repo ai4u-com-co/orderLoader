@@ -26,7 +26,7 @@ import fs from "fs";
 import path from "path";
 import { ImapFlow } from "imapflow";
 import { getConfig } from "../config";
-import { getDb, logPipeline, errToMsg } from "../db";
+import { getDb, logPipeline, errToMsg, insertPendingMove, completePendingMove } from "../db";
 
 export interface StepResult {
   procesados: number;
@@ -192,6 +192,7 @@ async function moveInImap(
   detalles: string[]
 ): Promise<void> {
   if (!moveJobs.length || !config.emailUser || !config.emailPass || !config.emailHost) return;
+  const db = getDb();
 
   // Filtrar jobs donde src == dest (DEST_REVISAR = REVISAR IA = staging, ya están ahí)
   const jobsToMove = moveJobs.filter(j => j.dest !== j.source);
@@ -253,6 +254,20 @@ async function moveInImap(
           const uids = [...uidSet].map(String).join(",");
           await imap.messageMove(uids, dest, { uid: true });
           detalles.push(`✓ ${uidSet.size} correo(s) ${srcFolder} → ${dest}`);
+        }
+
+        // Registrar el movimiento FINAL (a diferencia de step0, que solo registra su
+        // propio movimiento inicial INBOX→staging/revisión). Sin esto, ninguna
+        // herramienta puede distinguir "el pipeline puso este correo acá" de "alguien
+        // lo movió a mano" — hueco real que causó 73 falsos positivos en la primera
+        // corrida de la reconciliación diaria de Ingresados (TAMA-048, 2026-09-22):
+        // imap_pending_moves nunca tenía filas con carpeta_destino=INGRESADO.
+        for (const job of jobs) {
+          if (!job.messageId) continue; // sin Message-ID no hay forma confiable de rastrearlo
+          try {
+            const id = insertPendingMove(db, job.messageId, job.uid, srcFolder, job.dest);
+            completePendingMove(db, id);
+          } catch { /* no bloquear el archivado por esto */ }
         }
       } finally {
         lock.release();
