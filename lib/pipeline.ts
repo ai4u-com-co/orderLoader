@@ -2,6 +2,7 @@ import { backupDb, migrate, getDb, logPipeline } from "./db";
 import { getLogger, setRunContext, clearRunContext } from "./logger";
 import { sendAlertEmail } from "./mailer";
 import { getConfig } from "./config";
+import { parseSqliteUtc } from "./dates";
 
 const log = getLogger("pipeline");
 import { run as step0, recoverPendingMoves } from "./steps/step0-download";
@@ -154,7 +155,7 @@ async function checkMissedCron(): Promise<void> {
       .prepare(`SELECT MAX(ts) as last FROM pipeline_log WHERE fase_nombre = 'heartbeat'`)
       .get() as { last: string | null };
     if (!row?.last) return;
-    const lastMs = new Date(row.last).getTime();
+    const lastMs = parseSqliteUtc(row.last).getTime();
     const hoursAgo = (Date.now() - lastMs) / 3_600_000;
     if (hoursAgo > 25) {
       const h = hoursAgo.toFixed(1);

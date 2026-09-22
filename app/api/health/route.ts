@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { getActiveSap, clearActiveSap } from "@/lib/sap-gateway";
+import { parseSqliteUtc } from "@/lib/dates";
 import packageJson from "@/package.json";
 
 export async function GET(req: NextRequest) {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
       .get() as { last: string | null };
     lastPipelineRun = row?.last ?? null;
     if (lastPipelineRun) {
-      lastPipelineHoursAgo = Math.round((Date.now() - new Date(lastPipelineRun).getTime()) / 3_600_000 * 10) / 10;
+      lastPipelineHoursAgo = Math.round((Date.now() - parseSqliteUtc(lastPipelineRun).getTime()) / 3_600_000 * 10) / 10;
     }
   } catch (e) {
     dbStatus = String(e);
