@@ -264,4 +264,39 @@ describe("validarSapB1Json — SupplierCatNum repetido en el mismo pedido", () =
     );
     expect(errsMismoFreeText.some(e => e.includes("código repetido"))).toBe(true);
   });
+
+  // Caso real: OC 4500329379 de COMODIN S.A.S. — despacho legítimo por lotes del mismo
+  // ítem (misma fecha de entrega, mismo UnitPrice en ambas líneas, solo cambia Quantity:
+  // 6000 vs 100). El gate FLX-052 lo rechazaba como "código repetido" pese a que el precio
+  // idéntico entre líneas es justo la señal de que NO es el bug de columnas mezcladas del
+  // PDF (que produce precios brutalmente distintos, ver caso NewStetic arriba: 9.66 vs
+  // 31399.4). Decisión de Mariano: permitir la repetición cuando el UnitPrice coincide.
+  it("permite el mismo código y fecha repetidos cuando el UnitPrice coincide (despacho por lotes real de COMODIN, OC 4500329379)", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "14008578001", Quantity: 6000, UnitPrice: 165, DeliveryDate: "20260805" },
+          { SupplierCatNum: "14008578001", Quantity: 100, UnitPrice: 165, DeliveryDate: "20260805" },
+        ],
+      }),
+      "Comodin"
+    );
+    expect(errs.some(e => e.includes("código repetido"))).toBe(false);
+  });
+
+  // Cobertura extra (no es la regresión del ticket): mismo patrón con la segunda OC real
+  // adjunta por Mariano, para confirmar que no es un artefacto de los valores puntuales
+  // de la primera.
+  it("[cobertura extra] permite el mismo patrón de despacho por lotes en la OC 4500329626 de COMODIN", () => {
+    const errs = validarSapB1Json(
+      orderValido({
+        DocumentLines: [
+          { SupplierCatNum: "14003805003", Quantity: 1000, UnitPrice: 194, DeliveryDate: "20260805" },
+          { SupplierCatNum: "14003805003", Quantity: 400, UnitPrice: 194, DeliveryDate: "20260805" },
+        ],
+      }),
+      "Comodin"
+    );
+    expect(errs.some(e => e.includes("código repetido"))).toBe(false);
+  });
 });
