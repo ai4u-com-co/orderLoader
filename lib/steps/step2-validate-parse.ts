@@ -72,7 +72,15 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
   // (ej. tienda/centro de costo en pedidos multi-tienda como Hermeco/OFFCORSS: mismo
   // artículo, misma fecha general, una línea por tienda) — ver OC 4500416657 (12-ago-2026,
   // confirmado contra el XLSX del correo: 58 líneas "duplicadas" eran 58 tiendas reales).
-  const vistos = new Map<string, number>(); // `${SupplierCatNum}::${fechaEfectiva}::${freeText}` → línea donde se vio primero
+  // También se permite cuando el UnitPrice es idéntico entre todas las líneas que
+  // colisionan en esa clave (despacho legítimo por lotes del mismo ítem en renglones
+  // separados del sistema de compras del cliente, ej. COMODIN OC 4500329379: mismo código,
+  // misma fecha, mismo precio 165, solo cambia Quantity). El bug real que este gate atrapa
+  // (FLX-052, columnas mezcladas por el AI) siempre produce precios muy distintos entre las
+  // "líneas duplicadas" (ver caso NewStetic más abajo: 9.66 vs 31399.4) — un precio idéntico
+  // es justo la señal de que NO es ese bug. Si el UnitPrice difiere, o no viene definido en
+  // alguna de las líneas, se sigue rechazando (dos `undefined` NO cuentan como "coinciden").
+  const vistos = new Map<string, { primeraLinea: number; precios: (number | undefined)[] }>(); // `${SupplierCatNum}::${fechaEfectiva}::${freeText}` → línea donde se vio primero + precios vistos
   for (let i = 0; i < order.DocumentLines.length; i++) {
     const line = order.DocumentLines[i];
     const ref = `Línea ${i + 1}`;
@@ -87,11 +95,17 @@ export function validarSapB1Json(order: SapB1Order, _clienteNombre: string): str
 
       const fechaEfectiva = line.DeliveryDate ?? order.DocDueDate ?? "";
       const key = `${line.SupplierCatNum}::${fechaEfectiva}::${line.FreeText ?? ""}`;
-      const primeraLinea = vistos.get(key);
-      if (primeraLinea != null) {
-        errores.push(`${ref} (${line.SupplierCatNum}): código repetido en Línea ${primeraLinea} con la misma fecha de entrega — revisar si el PDF mezcló datos de ambas filas`);
+      const visto = vistos.get(key);
+      if (visto != null) {
+        const precioConsistente =
+          line.UnitPrice !== undefined &&
+          visto.precios.every((p) => p !== undefined && p === line.UnitPrice);
+        if (!precioConsistente) {
+          errores.push(`${ref} (${line.SupplierCatNum}): código repetido en Línea ${visto.primeraLinea} con la misma fecha de entrega — revisar si el PDF mezcló datos de ambas filas`);
+        }
+        visto.precios.push(line.UnitPrice);
       } else {
-        vistos.set(key, i + 1);
+        vistos.set(key, { primeraLinea: i + 1, precios: [line.UnitPrice] });
       }
     }
 
